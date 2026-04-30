@@ -1,0 +1,14 @@
+"Power — integer exponentiation by repeated multiplication"
+| power |
+power := [ :base :exp | | result |
+    result := 1.
+    exp timesRepeat: [ result := result * base ].
+    result
+].
+Console println: (power value: 2 value: 10) printString.
+Console println: (power value: 3 value: 4) printString.
+Console println: (power value: 5 value: 0) printString.
+"Expected:
+1024
+81
+1"

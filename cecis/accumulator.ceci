@@ -1,0 +1,17 @@
+"Accumulator — a closure-based counter factory; each instance has its own state"
+| makeAccumulator counter1 counter2 |
+makeAccumulator := [ :start | | n |
+    n := start.
+    [ :amount | n := n + amount. n ]
+].
+counter1 := makeAccumulator value: 0.
+counter2 := makeAccumulator value: 100.
+Console println: (counter1 value: 5) printString.
+Console println: (counter1 value: 10) printString.
+Console println: (counter2 value: 3) printString.
+Console println: (counter1 value: 1) printString.
+"Expected:
+5
+15
+103
+16"

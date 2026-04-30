@@ -1,0 +1,15 @@
+"FizzBuzz — print 1 to 20, replacing multiples of 3 with Fizz,
+ multiples of 5 with Buzz, and multiples of both with FizzBuzz"
+1 to: 20 do: [ :i |
+    ((i \\ 15) = 0)
+        ifTrue:  [ Console println: 'FizzBuzz' ]
+        ifFalse: [
+            ((i \\ 3) = 0)
+                ifTrue:  [ Console println: 'Fizz' ]
+                ifFalse: [
+                    ((i \\ 5) = 0)
+                        ifTrue:  [ Console println: 'Buzz' ]
+                        ifFalse: [ Console println: i printString ]
+                ]
+        ]
+].

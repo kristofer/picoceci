@@ -1,0 +1,25 @@
+"Stack — a simple LIFO stack implemented as an object"
+object Stack {
+    | storage top |
+    init    [ storage := Array new: 64. top := 0 ]
+    push: v [ top := top + 1. storage at: top put: v. ^self ]
+    pop     [ | v | v := storage at: top. top := top - 1. ^v ]
+    peek    [ ^storage at: top ]
+    isEmpty [ ^top = 0 ]
+    size    [ ^top ]
+}
+
+| s |
+s := Stack new.
+s push: 10.
+s push: 20.
+s push: 30.
+Console println: s pop printString.
+Console println: s pop printString.
+Console println: s size printString.
+Console println: s isEmpty printString.
+"Expected:
+30
+20
+1
+false"
