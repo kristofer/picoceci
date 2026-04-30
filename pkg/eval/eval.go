@@ -209,16 +209,20 @@ func (interp *Interpreter) evalNode(n ast.Node, env *Env) (*object.Object, error
 				return nil, err
 			}
 			inst.Slots[slot.Name] = val
-			// Expose each slot as a unary accessor method.
-			slotName := slot.Name
-			inst.Methods[slotName] = &object.MethodDef{
-				Selector: slotName,
-				Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
-					if v, ok := self.Slots[slotName]; ok {
-						return v, nil
+			// Expose each slot as a unary accessor method.  Use an
+			// immediately-applied wrapper so each closure captures its
+			// own copy of the slot name rather than a shared variable.
+			name := slot.Name
+			inst.Methods[name] = &object.MethodDef{
+				Selector: name,
+				Native: func(n string) func(*object.Object, []*object.Object) (*object.Object, error) {
+					return func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+						if v, ok := self.Slots[n]; ok {
+							return v, nil
+						}
+						return object.Nil, nil
 					}
-					return object.Nil, nil
-				},
+				}(name),
 			}
 		}
 		return inst, nil
