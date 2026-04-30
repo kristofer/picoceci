@@ -194,6 +194,38 @@ func (interp *Interpreter) evalNode(n ast.Node, env *Env) (*object.Object, error
 			return v, nil
 		}
 		return object.Nil, nil
+	case *ast.ThisContextExpr:
+		// thisContext is not fully implemented; return nil for now.
+		return object.Nil, nil
+	case *ast.AnonObjectLit:
+		inst := &object.Object{
+			Kind:    object.KindObject,
+			Slots:   make(map[string]*object.Object),
+			Methods: make(map[string]*object.MethodDef),
+		}
+		for _, slot := range node.Slots {
+			val, err := interp.evalNode(slot.Value, env)
+			if err != nil {
+				return nil, err
+			}
+			inst.Slots[slot.Name] = val
+			// Expose each slot as a unary accessor method.  Use an
+			// immediately-applied wrapper so each closure captures its
+			// own copy of the slot name rather than a shared variable.
+			name := slot.Name
+			inst.Methods[name] = &object.MethodDef{
+				Selector: name,
+				Native: func(n string) func(*object.Object, []*object.Object) (*object.Object, error) {
+					return func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+						if v, ok := self.Slots[n]; ok {
+							return v, nil
+						}
+						return object.Nil, nil
+					}
+				}(name),
+			}
+		}
+		return inst, nil
 	case *ast.Block:
 		blk := &object.Object{
 			Kind:   object.KindBlock,

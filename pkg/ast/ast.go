@@ -262,14 +262,35 @@ func (n *Ident) nodeString() string { return fmt.Sprintf("Ident(%s)", n.Name) }
 // SelfExpr is the `self` pseudo-variable.
 type SelfExpr struct{ Pos Pos }
 
-func (n *SelfExpr) nodePos() Pos    { return n.Pos }
+func (n *SelfExpr) nodePos() Pos       { return n.Pos }
 func (n *SelfExpr) nodeString() string { return "self" }
 
 // SuperExpr is the `super` pseudo-variable.
 type SuperExpr struct{ Pos Pos }
 
-func (n *SuperExpr) nodePos() Pos    { return n.Pos }
+func (n *SuperExpr) nodePos() Pos       { return n.Pos }
 func (n *SuperExpr) nodeString() string { return "super" }
+
+// ThisContextExpr is the `thisContext` pseudo-variable.
+type ThisContextExpr struct{ Pos Pos }
+
+func (n *ThisContextExpr) nodePos() Pos       { return n.Pos }
+func (n *ThisContextExpr) nodeString() string { return "thisContext" }
+
+// AnonSlot is a name/value pair inside an anonymous object literal.
+type AnonSlot struct {
+	Name  string
+	Value Node
+}
+
+// AnonObjectLit is an anonymous object literal:  object { x := 3. y := 4 }
+type AnonObjectLit struct {
+	Pos   Pos
+	Slots []AnonSlot
+}
+
+func (n *AnonObjectLit) nodePos() Pos       { return n.Pos }
+func (n *AnonObjectLit) nodeString() string { return fmt.Sprintf("AnonObject(%d slots)", len(n.Slots)) }
 
 // Block represents a block closure: [ :p | body ]
 type Block struct {
