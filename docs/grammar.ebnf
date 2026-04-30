@@ -1,0 +1,303 @@
+(*
+  picoceci Formal Grammar (EBNF)
+  Version: 0.1-draft
+
+  Notation:
+    =       definition
+    ,       concatenation
+    ;       termination of a rule
+    |       alternation
+    [...]   option (0 or 1)
+    {...}   repetition (0 or more)
+    (...)   grouping
+    "..."   terminal string
+    '...'   terminal string (alternative)
+    (*...*) comment
+*)
+
+(* ============================================================
+   Top-level
+   ============================================================ *)
+
+program
+    = { top_level_decl | statement , [ "." ] } , EOF
+    ;
+
+top_level_decl
+    = object_decl
+    | interface_decl
+    | import_decl
+    ;
+
+(* ============================================================
+   Declarations
+   ============================================================ *)
+
+import_decl
+    = "import" , STRING , "."
+    ;
+
+object_decl
+    = "object" , IDENTIFIER , "{" ,
+          [ compose_clause ]
+          [ var_decl ]
+          { method_def }
+      "}"
+    ;
+
+compose_clause
+    = "compose" , IDENTIFIER , "." , { "compose" , IDENTIFIER , "." }
+    ;
+
+interface_decl
+    = "interface" , IDENTIFIER , "{" ,
+          { method_sig }
+      "}"
+    ;
+
+method_sig
+    = unary_selector
+    | binary_op , IDENTIFIER        (* e.g.  + aNumber *)
+    | { KEYWORD , IDENTIFIER }      (* e.g.  at: index put: value *)
+    ;
+
+method_def
+    = method_selector , "[" ,
+          [ var_decl ]
+          { statement , [ "." ] }
+      "]"
+    ;
+
+method_selector
+    = unary_selector
+    | binary_op , IDENTIFIER
+    | { KEYWORD , IDENTIFIER }
+    ;
+
+unary_selector
+    = IDENTIFIER           (* must not be a KEYWORD *)
+    ;
+
+(* ============================================================
+   Statements
+   ============================================================ *)
+
+statement
+    = return_stmt
+    | var_decl
+    | expression
+    ;
+
+var_decl
+    = "|" , { IDENTIFIER } , "|"
+    ;
+
+return_stmt
+    = "^" , expression
+    ;
+
+(* ============================================================
+   Expressions
+   ============================================================ *)
+
+expression
+    = assignment
+    | cascade
+    ;
+
+assignment
+    = IDENTIFIER , ":=" , expression
+    ;
+
+cascade
+    = keyword_expr , { ";" , cascade_msg }
+    ;
+
+cascade_msg
+    = unary_msg
+    | binary_msg
+    | keyword_msg
+    ;
+
+keyword_expr
+    = binary_expr , { KEYWORD , binary_expr }
+    ;
+
+binary_expr
+    = unary_expr , { BINARY_OP , unary_expr }
+    ;
+
+unary_expr
+    = primary , { unary_selector }
+    ;
+
+primary
+    = literal
+    | IDENTIFIER
+    | block
+    | anon_object
+    | "(" , expression , ")"
+    | "self"
+    | "super"
+    | "nil"
+    | "true"
+    | "false"
+    | "thisContext"
+    ;
+
+(* Abbreviated message forms (used in cascade) *)
+
+unary_msg
+    = unary_selector
+    ;
+
+binary_msg
+    = BINARY_OP , unary_expr
+    ;
+
+keyword_msg
+    = { KEYWORD , binary_expr }    (* at least one keyword pair *)
+    ;
+
+(* ============================================================
+   Literals
+   ============================================================ *)
+
+literal
+    = INTEGER
+    | FLOAT
+    | STRING
+    | SYMBOL
+    | CHARACTER
+    | byte_array_lit
+    | array_lit
+    ;
+
+byte_array_lit
+    = "#[" , { INTEGER } , "]"
+    ;
+
+array_lit
+    = "#(" , { array_element } , ")"
+    ;
+
+array_element
+    = literal
+    | IDENTIFIER        (* treated as symbol inside #() *)
+    | KEYWORD           (* treated as symbol inside #() *)
+    ;
+
+(* Anonymous object literal *)
+anon_object
+    = "object" , "{" ,
+          { IDENTIFIER , ":=" , expression , "." }
+      "}"
+    ;
+
+(* ============================================================
+   Blocks (Closures)
+   ============================================================ *)
+
+block
+    = "[" ,
+          [ { ":" , IDENTIFIER } , "|" ]    (* parameters *)
+          [ var_decl ]                        (* locals *)
+          { statement , [ "." ] }
+      "]"
+    ;
+
+(* ============================================================
+   Terminals
+   ============================================================ *)
+
+IDENTIFIER
+    = LETTER , { LETTER | DIGIT | "_" }
+    ;
+
+KEYWORD
+    = IDENTIFIER , ":"
+    ;
+
+BINARY_OP
+    = BINCHAR , { BINCHAR }
+    ;
+
+BINCHAR
+    = "+" | "-" | "*" | "/" | "<" | ">" | "=" | "~"
+    | "@" | "," | "&" | "|" | "\" | "?" | "!" | "%"
+    ;
+
+(* Note: ":=" and "|" and "^" are special tokens, not BINARY_OP *)
+
+INTEGER
+    = DIGIT , { DIGIT }                                 (* decimal *)
+    | DIGIT , { DIGIT } , "r" , ALNUM , { ALNUM }      (* base#value: 16rFF *)
+    ;
+
+FLOAT
+    = DIGIT , { DIGIT } , "." , DIGIT , { DIGIT } ,
+      [ ( "e" | "E" ) , [ "+" | "-" ] , DIGIT , { DIGIT } ]
+    ;
+
+STRING
+    = "'" , { STRING_CHAR } , "'"
+    ;
+
+STRING_CHAR
+    = any character except "'"
+    | "''"                     (* escaped single quote *)
+    ;
+
+SYMBOL
+    = "#" , IDENTIFIER
+    | "#" , KEYWORD , { KEYWORD }   (* multi-keyword: #at:put: *)
+    | "#" , STRING                  (* #'with spaces' *)
+    ;
+
+CHARACTER
+    = "$" , any_char
+    | "$\" , escape_char           (* $\n  $\t  $\\  etc. *)
+    ;
+
+escape_char
+    = "n" | "t" | "r" | "\" | "'" | "0"
+    ;
+
+LETTER
+    = "A" .. "Z" | "a" .. "z"
+    | (* any Unicode letter codepoint *)
+    ;
+
+DIGIT
+    = "0" .. "9"
+    ;
+
+ALNUM
+    = LETTER | DIGIT
+    ;
+
+EOF
+    = (* end of input *)
+    ;
+
+(* ============================================================
+   Comments
+   ============================================================ *)
+
+COMMENT
+    = '"' , { any character except '"' } , '"'
+    ;
+
+(* Comments are stripped by the lexer and do not appear in the grammar *)
+
+(* ============================================================
+   Whitespace
+   ============================================================ *)
+
+WS
+    = " " | "\t" | "\n" | "\r"
+    ;
+
+(* Whitespace and comments are ignored between tokens *)
+
+(* End of grammar *)

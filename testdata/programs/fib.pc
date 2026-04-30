@@ -1,0 +1,10 @@
+"Fibonacci — recursive using a recursive block"
+| fib result |
+fib := [ :n |
+    (n <= 1)
+        ifTrue:  [ n ]
+        ifFalse: [ (fib value: n - 1) + (fib value: n - 2) ]
+].
+result := fib value: 10.
+Console println: result printString.
+"Expected: 55"
