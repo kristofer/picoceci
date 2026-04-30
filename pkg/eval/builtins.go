@@ -2,6 +2,8 @@ package eval
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/kristofer/picoceci/pkg/ast"
@@ -23,6 +25,11 @@ func registerBuiltins(env *Env) {
 	env.Set("Console", console)
 	env.Define("Transcript")
 	env.Set("Transcript", console)
+
+	// Array class object — responds to new: and new:withAll:
+	arrayClass := makeArrayClass()
+	env.Define("Array")
+	env.Set("Array", arrayClass)
 }
 
 func displayString(o *object.Object) string {
@@ -61,6 +68,40 @@ func makeConsole() *object.Object {
 	o.Methods["nl"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
 		fmt.Println()
 		return object.Nil, nil
+	}}
+	return o
+}
+
+func makeArrayClass() *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+	}
+	o.Methods["new:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		if len(args) > 0 && args[0].Kind == object.KindSmallInt {
+			n := args[0].IVal
+			if n < 0 || n > math.MaxInt {
+				return object.ArrayObject(0), nil
+			}
+			return object.ArrayObject(int(n)), nil
+		}
+		return object.ArrayObject(0), nil
+	}}
+	o.Methods["new:withAll:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		if len(args) == 2 && args[0].Kind == object.KindSmallInt {
+			n := args[0].IVal
+			if n < 0 || n > math.MaxInt {
+				return object.ArrayObject(0), nil
+			}
+			size := int(n)
+			arr := &object.Object{Kind: object.KindArray, Items: make([]*object.Object, size)}
+			for i := range arr.Items {
+				arr.Items[i] = args[1]
+			}
+			return arr, nil
+		}
+		return object.ArrayObject(0), nil
 	}}
 	return o
 }
@@ -250,6 +291,14 @@ func intDispatch(interp *Interpreter, recv *object.Object, sel string, args []*o
 		return recv, nil, true
 	case "negated":
 		return object.IntObject(-a), nil, true
+	case "sqrt":
+		return object.FloatObject(math.Sqrt(float64(a))), nil, true
+	case "floor":
+		return recv, nil, true
+	case "ceiling":
+		return recv, nil, true
+	case "rounded":
+		return recv, nil, true
 	case "asFloat":
 		return object.FloatObject(float64(a)), nil, true
 	case "asInteger":
@@ -365,6 +414,14 @@ func floatDispatch(recv *object.Object, sel string, args []*object.Object, p ast
 		return recv, nil, true
 	case "negated":
 		return object.FloatObject(-a), nil, true
+	case "sqrt":
+		return object.FloatObject(math.Sqrt(a)), nil, true
+	case "floor":
+		return object.IntObject(int64(math.Floor(a))), nil, true
+	case "ceiling":
+		return object.IntObject(int64(math.Ceil(a))), nil, true
+	case "rounded":
+		return object.IntObject(int64(math.Round(a))), nil, true
 	case "printString":
 		return object.StringObject(fmt.Sprintf("%g", a)), nil, true
 	case "asFloat":
@@ -506,6 +563,47 @@ func stringDispatch(interp *Interpreter, recv *object.Object, sel string, args [
 		return object.False, nil, true
 	case "notNil":
 		return object.True, nil, true
+	case "at:":
+		if len(args) > 0 && args[0].Kind == object.KindSmallInt {
+			runes := []rune(s)
+			idx64 := args[0].IVal
+			nRunes := int64(len(runes))
+			if idx64 < 1 || idx64 > nRunes || idx64 > math.MaxInt {
+				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds (size %d)", idx64, nRunes), Pos: p}, true
+			}
+			return object.CharObject(runes[int(idx64)-1]), nil, true
+		}
+	case "copyFrom:to:":
+		if len(args) == 2 && args[0].Kind == object.KindSmallInt && args[1].Kind == object.KindSmallInt {
+			runes := []rune(s)
+			n := int64(len(runes))
+			start64 := args[0].IVal - 1
+			stop64 := args[1].IVal
+			if start64 < 0 {
+				start64 = 0
+			}
+			if stop64 > n {
+				stop64 = n
+			}
+			if start64 > stop64 || stop64 > math.MaxInt {
+				return object.StringObject(""), nil, true
+			}
+			return object.StringObject(string(runes[int(start64):int(stop64)])), nil, true
+		}
+	case "includesSubString:":
+		if len(args) > 0 && args[0].Kind == object.KindString {
+			return object.BoolObject(strings.Contains(s, args[0].SVal)), nil, true
+		}
+	case "asInteger":
+		if v, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil {
+			return object.IntObject(v), nil, true
+		}
+		return object.Nil, nil, true
+	case "asFloat":
+		if v, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
+			return object.FloatObject(v), nil, true
+		}
+		return object.Nil, nil, true
 	case "do:":
 		if len(args) > 0 && args[0].Kind == object.KindBlock {
 			for _, r := range s {
@@ -551,19 +649,21 @@ func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 		return object.IntObject(int64(len(items))), nil, true
 	case "at:":
 		if len(args) > 0 && args[0].Kind == object.KindSmallInt {
-			idx := int(args[0].IVal) - 1
-			if idx < 0 || idx >= len(items) {
-				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds (size %d)", idx+1, len(items)), Pos: p}, true
+			idx64 := args[0].IVal
+			nItems := int64(len(items))
+			if idx64 < 1 || idx64 > nItems || idx64 > math.MaxInt {
+				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds (size %d)", idx64, nItems), Pos: p}, true
 			}
-			return items[idx], nil, true
+			return items[int(idx64)-1], nil, true
 		}
 	case "at:put:":
 		if len(args) == 2 && args[0].Kind == object.KindSmallInt {
-			idx := int(args[0].IVal) - 1
-			if idx < 0 || idx >= len(items) {
-				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds", idx+1), Pos: p}, true
+			idx64 := args[0].IVal
+			nItems := int64(len(items))
+			if idx64 < 1 || idx64 > nItems || idx64 > math.MaxInt {
+				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds", idx64), Pos: p}, true
 			}
-			items[idx] = args[1]
+			items[int(idx64)-1] = args[1]
 			return args[1], nil, true
 		}
 	case "first":
@@ -623,6 +723,28 @@ func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 				acc = v
 			}
 			return acc, nil, true
+		}
+	case "detect:":
+		if len(args) > 0 && args[0].Kind == object.KindBlock {
+			for _, item := range items {
+				v, err := interp.CallBlock(args[0], []*object.Object{item})
+				if err != nil {
+					return nil, err, true
+				}
+				if v.Truthy() {
+					return item, nil, true
+				}
+			}
+			return nil, &Error{Kind: "ElementNotFound", Message: "detect: no element satisfies the block", Pos: p}, true
+		}
+	case "withIndexDo:":
+		if len(args) > 0 && args[0].Kind == object.KindBlock {
+			for i, item := range items {
+				if _, err := interp.CallBlock(args[0], []*object.Object{object.IntObject(int64(i + 1)), item}); err != nil {
+					return nil, err, true
+				}
+			}
+			return recv, nil, true
 		}
 	case "printString":
 		var parts []string

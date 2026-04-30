@@ -1,0 +1,26 @@
+"Super dispatch — LoggedCounter uses super to delegate to Counter's inc"
+object Counter {
+    | count |
+    init  [ count := 0 ]
+    inc   [ count := count + 1. ^self ]
+    value [ ^count ]
+}
+
+object LoggedCounter {
+    compose Counter.
+    inc [
+        super inc.
+        Console println: 'incremented to ', self value printString.
+        ^self
+    ]
+}
+
+| c |
+c := LoggedCounter new.
+c inc.
+c inc.
+Console println: c value printString.
+"Expected:
+incremented to 1
+incremented to 2
+2"
