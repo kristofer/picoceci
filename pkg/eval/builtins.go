@@ -558,27 +558,28 @@ func stringDispatch(interp *Interpreter, recv *object.Object, sel string, args [
 	case "at:":
 		if len(args) > 0 && args[0].Kind == object.KindSmallInt {
 			runes := []rune(s)
-			idx := int(args[0].IVal) - 1
-			if idx < 0 || idx >= len(runes) {
-				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds (size %d)", idx+1, len(runes)), Pos: p}, true
+			idx64 := args[0].IVal
+			if idx64 < 1 || idx64 > int64(len(runes)) {
+				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds (size %d)", idx64, len(runes)), Pos: p}, true
 			}
-			return object.CharObject(runes[idx]), nil, true
+			return object.CharObject(runes[int(idx64)-1]), nil, true
 		}
 	case "copyFrom:to:":
 		if len(args) == 2 && args[0].Kind == object.KindSmallInt && args[1].Kind == object.KindSmallInt {
 			runes := []rune(s)
-			start := int(args[0].IVal) - 1
-			stop := int(args[1].IVal)
-			if start < 0 {
-				start = 0
+			n := int64(len(runes))
+			start64 := args[0].IVal - 1
+			stop64 := args[1].IVal
+			if start64 < 0 {
+				start64 = 0
 			}
-			if stop > len(runes) {
-				stop = len(runes)
+			if stop64 > n {
+				stop64 = n
 			}
-			if start > stop {
+			if start64 > stop64 {
 				return object.StringObject(""), nil, true
 			}
-			return object.StringObject(string(runes[start:stop])), nil, true
+			return object.StringObject(string(runes[int(start64):int(stop64)])), nil, true
 		}
 	case "includesSubString:":
 		if len(args) > 0 && args[0].Kind == object.KindString {
@@ -639,19 +640,19 @@ func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 		return object.IntObject(int64(len(items))), nil, true
 	case "at:":
 		if len(args) > 0 && args[0].Kind == object.KindSmallInt {
-			idx := int(args[0].IVal) - 1
-			if idx < 0 || idx >= len(items) {
-				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds (size %d)", idx+1, len(items)), Pos: p}, true
+			idx64 := args[0].IVal
+			if idx64 < 1 || idx64 > int64(len(items)) {
+				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds (size %d)", idx64, len(items)), Pos: p}, true
 			}
-			return items[idx], nil, true
+			return items[int(idx64)-1], nil, true
 		}
 	case "at:put:":
 		if len(args) == 2 && args[0].Kind == object.KindSmallInt {
-			idx := int(args[0].IVal) - 1
-			if idx < 0 || idx >= len(items) {
-				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds", idx+1), Pos: p}, true
+			idx64 := args[0].IVal
+			if idx64 < 1 || idx64 > int64(len(items)) {
+				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds", idx64), Pos: p}, true
 			}
-			items[idx] = args[1]
+			items[int(idx64)-1] = args[1]
 			return args[1], nil, true
 		}
 	case "first":
@@ -725,7 +726,7 @@ func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 			}
 			return nil, &Error{Kind: "ElementNotFound", Message: "detect: no element satisfies the block", Pos: p}, true
 		}
-	case "with:":
+	case "withIndexDo:":
 		if len(args) > 0 && args[0].Kind == object.KindBlock {
 			for i, item := range items {
 				if _, err := interp.CallBlock(args[0], []*object.Object{object.IntObject(int64(i + 1)), item}); err != nil {

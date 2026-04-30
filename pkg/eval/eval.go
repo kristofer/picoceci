@@ -474,7 +474,7 @@ func (interp *Interpreter) superSend(self *object.Object, selector string, args 
 	}
 	return nil, &Error{
 		Kind:    "MessageNotUnderstood",
-		Message: fmt.Sprintf("%s does not understand super #%s", kindDescription(self), selector),
+		Message: fmt.Sprintf("super dispatch failed: no composed method #%s found on %s", selector, kindDescription(self)),
 		Pos:     p,
 	}
 }
