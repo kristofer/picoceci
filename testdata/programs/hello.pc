@@ -1,0 +1,2 @@
+"Hello, World! — the simplest picoceci program"
+Console println: 'Hello, picoceci!'.
