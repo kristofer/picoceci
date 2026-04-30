@@ -53,9 +53,10 @@ type Object struct {
 	Items   []*Object // KindArray
 
 	// Object / block storage.
-	Slots   map[string]*Object // instance variable slots
-	Methods map[string]*MethodDef
-	Env     interface{} // *eval.Env — set by eval package (avoid import cycle)
+	Slots          map[string]*Object // instance variable slots
+	Methods        map[string]*MethodDef
+	ComposedMethods map[string]*MethodDef // composed-object methods for super dispatch
+	Env            interface{}            // *eval.Env — set by eval package (avoid import cycle)
 
 	// Block-specific.
 	Params []string

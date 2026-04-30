@@ -27,9 +27,10 @@ func (e *Error) Error() string {
 // Env is a lexical scope mapping variable names to objects.
 // When selfObj is non-nil, slot names in selfObj.Slots are visible as variables.
 type Env struct {
-	vars    map[string]*object.Object
-	outer   *Env
-	selfObj *object.Object // non-nil in method environments
+	vars            map[string]*object.Object
+	outer           *Env
+	selfObj         *object.Object // non-nil in method environments
+	composedMethods map[string]*object.MethodDef // for super dispatch in method envs
 }
 
 // NewEnv creates a fresh top-level environment.
@@ -40,6 +41,17 @@ func NewEnv() *Env {
 // child creates a nested scope.
 func (e *Env) child() *Env {
 	return &Env{vars: make(map[string]*object.Object), outer: e}
+}
+
+// getComposedMethods walks the scope chain to find the nearest composedMethods table.
+func (e *Env) getComposedMethods() map[string]*object.MethodDef {
+	if e == nil {
+		return nil
+	}
+	if e.composedMethods != nil {
+		return e.composedMethods
+	}
+	return e.outer.getComposedMethods()
 }
 
 // Get looks up a variable, walking the scope chain.
@@ -107,12 +119,16 @@ func (e *Env) Define(name string) {
 
 // Interpreter holds the interpreter state.
 type Interpreter struct {
-	globals *Env
+	globals         *Env
+	objectTemplates map[string]*ast.ObjectDecl // AST templates for compose support
 }
 
 // New creates a new Interpreter with built-in objects registered.
 func New() *Interpreter {
-	interp := &Interpreter{globals: NewEnv()}
+	interp := &Interpreter{
+		globals:         NewEnv(),
+		objectTemplates: make(map[string]*ast.ObjectDecl),
+	}
 	registerBuiltins(interp.globals)
 	return interp
 }
@@ -236,12 +252,30 @@ func (interp *Interpreter) evalNode(n ast.Node, env *Env) (*object.Object, error
 		}
 		return blk, nil
 	case *ast.UnaryMsg:
+		if _, ok := node.Receiver.(*ast.SuperExpr); ok {
+			self, _ := env.Get("self")
+			if self == nil {
+				self = object.Nil
+			}
+			return interp.superSend(self, node.Selector, nil, node.Pos, env)
+		}
 		recv, err := interp.evalNode(node.Receiver, env)
 		if err != nil {
 			return nil, err
 		}
 		return interp.send(recv, node.Selector, nil, node.Pos)
 	case *ast.BinaryMsg:
+		if _, ok := node.Receiver.(*ast.SuperExpr); ok {
+			self, _ := env.Get("self")
+			if self == nil {
+				self = object.Nil
+			}
+			arg, err := interp.evalNode(node.Arg, env)
+			if err != nil {
+				return nil, err
+			}
+			return interp.superSend(self, node.Op, []*object.Object{arg}, node.Pos, env)
+		}
 		recv, err := interp.evalNode(node.Receiver, env)
 		if err != nil {
 			return nil, err
@@ -252,6 +286,25 @@ func (interp *Interpreter) evalNode(n ast.Node, env *Env) (*object.Object, error
 		}
 		return interp.send(recv, node.Op, []*object.Object{arg}, node.Pos)
 	case *ast.KeywordMsg:
+		if _, ok := node.Receiver.(*ast.SuperExpr); ok {
+			self, _ := env.Get("self")
+			if self == nil {
+				self = object.Nil
+			}
+			args := make([]*object.Object, len(node.Args))
+			var err error
+			for i, a := range node.Args {
+				args[i], err = interp.evalNode(a, env)
+				if err != nil {
+					return nil, err
+				}
+			}
+			sel := ""
+			for _, k := range node.Keywords {
+				sel += k
+			}
+			return interp.superSend(self, sel, args, node.Pos, env)
+		}
 		recv, err := interp.evalNode(node.Receiver, env)
 		if err != nil {
 			return nil, err
@@ -368,7 +421,12 @@ func (interp *Interpreter) applyMethod(self *object.Object, m *object.MethodDef,
 	if !ok {
 		return object.Nil, nil
 	}
-	methodEnv := &Env{vars: make(map[string]*object.Object), selfObj: self}
+	methodEnv := &Env{
+		vars:            make(map[string]*object.Object),
+		selfObj:         self,
+		composedMethods: self.ComposedMethods,
+		outer:           interp.globals,
+	}
 	methodEnv.Define("self")
 	methodEnv.vars["self"] = self // bypass slot lookup for "self" itself
 	for i, param := range m.Params {
@@ -406,24 +464,81 @@ func (interp *Interpreter) CallBlock(blk *object.Object, args []*object.Object) 
 	return interp.evalStatements(body, blockEnv)
 }
 
+// superSend dispatches a message to the composed (super) methods of an object.
+func (interp *Interpreter) superSend(self *object.Object, selector string, args []*object.Object, p ast.Pos, env *Env) (*object.Object, error) {
+	composed := env.getComposedMethods()
+	if composed != nil {
+		if m, ok := composed[selector]; ok {
+			return interp.applyMethod(self, m, args, p)
+		}
+	}
+	return nil, &Error{
+		Kind:    "MessageNotUnderstood",
+		Message: fmt.Sprintf("%s does not understand super #%s", kindDescription(self), selector),
+		Pos:     p,
+	}
+}
+
 // registerObjectDecl registers an object template so that `Name new` works.
 func (interp *Interpreter) registerObjectDecl(decl *ast.ObjectDecl, env *Env) {
-	// Build a factory function accessible as a global name.
-	factory := &object.Object{
-		Kind:    object.KindObject,
-		Slots:   make(map[string]*object.Object),
-		Methods: make(map[string]*object.MethodDef),
+	// Save template for composition lookup.
+	interp.objectTemplates[decl.Name] = decl
+
+	// Collect slots and methods from all composed objects (in declaration order).
+	allSlots := make([]string, 0)
+	composedMethods := make(map[string]*object.MethodDef)
+
+	for _, composeName := range decl.Composes {
+		if composeDecl, ok := interp.objectTemplates[composeName]; ok {
+			allSlots = append(allSlots, composeDecl.Slots...)
+		}
+		if composeFactory, ok := env.Get(composeName); ok {
+			for sel, m := range composeFactory.Methods {
+				if sel != "new" {
+					composedMethods[sel] = m
+				}
+			}
+		}
 	}
+
+	// Own slots come after composed slots.
+	allSlots = append(allSlots, decl.Slots...)
+
+	// Build the factory's method table: composed methods first, then own
+	// methods override them.
+	factory := &object.Object{
+		Kind:            object.KindObject,
+		Slots:           make(map[string]*object.Object),
+		Methods:         make(map[string]*object.MethodDef),
+		ComposedMethods: composedMethods,
+	}
+
+	for sel, m := range composedMethods {
+		factory.Methods[sel] = m
+	}
+
+	for _, mdef := range decl.Methods {
+		mdef := mdef // capture
+		factory.Methods[mdef.Selector] = &object.MethodDef{
+			Selector: mdef.Selector,
+			Params:   mdef.Params,
+			Locals:   mdef.Locals,
+			Body:     mdef.Body,
+		}
+	}
+
 	// `new` method: create an instance and call `init` if it exists.
+	capturedSlots := allSlots
 	factory.Methods["new"] = &object.MethodDef{
 		Selector: "new",
 		Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
 			inst := &object.Object{
-				Kind:    object.KindObject,
-				Slots:   make(map[string]*object.Object),
-				Methods: self.Methods, // share method table
+				Kind:            object.KindObject,
+				Slots:           make(map[string]*object.Object),
+				Methods:         self.Methods, // share method table
+				ComposedMethods: self.ComposedMethods,
 			}
-			for _, slot := range decl.Slots {
+			for _, slot := range capturedSlots {
 				inst.Slots[slot] = object.Nil
 			}
 			// Call init if defined.
@@ -436,16 +551,7 @@ func (interp *Interpreter) registerObjectDecl(decl *ast.ObjectDecl, env *Env) {
 			return inst, nil
 		},
 	}
-	// Register methods.
-	for _, mdef := range decl.Methods {
-		mdef := mdef // capture
-		factory.Methods[mdef.Selector] = &object.MethodDef{
-			Selector: mdef.Selector,
-			Params:   mdef.Params,
-			Locals:   mdef.Locals,
-			Body:     mdef.Body,
-		}
-	}
+
 	env.Define(decl.Name)
 	env.Set(decl.Name, factory)
 }

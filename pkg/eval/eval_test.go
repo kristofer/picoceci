@@ -395,3 +395,231 @@ func TestEval_UndefinedVariable(t *testing.T) {
 		t.Errorf("expected UndefinedVariable, got %v", err)
 	}
 }
+
+// --- composition ------------------------------------------------------------
+
+func TestEval_Composition_SlotsInherited(t *testing.T) {
+	src := `
+object Base {
+    | x |
+    init  [ x := 10 ]
+    getX  [ ^x ]
+}
+object Derived {
+    compose Base.
+}
+| d |
+d := Derived new.
+d getX.`
+	obj := evalSrc(t, src)
+	if obj.IVal != 10 {
+		t.Errorf("composed slot: got %v, want 10", obj.PrintString())
+	}
+}
+
+func TestEval_Composition_MethodInherited(t *testing.T) {
+	src := `
+object Counter {
+    | count |
+    init  [ count := 0 ]
+    inc   [ count := count + 1. ^self ]
+    value [ ^count ]
+}
+object LoggedCounter {
+    compose Counter.
+    inc [
+        count := count + 1.
+        ^self
+    ]
+}
+| c |
+c := LoggedCounter new.
+c inc.
+c inc.
+c value.`
+	obj := evalSrc(t, src)
+	if obj.IVal != 2 {
+		t.Errorf("composition method: got %v, want 2", obj.PrintString())
+	}
+}
+
+func TestEval_Composition_SuperDispatch(t *testing.T) {
+	src := `
+object Base {
+    | x |
+    init  [ x := 0 ]
+    inc   [ x := x + 1. ^self ]
+    value [ ^x ]
+}
+object Child {
+    compose Base.
+    inc [
+        super inc.
+        super inc.
+        ^self
+    ]
+}
+| c |
+c := Child new.
+c inc.
+c value.`
+	obj := evalSrc(t, src)
+	if obj.IVal != 2 {
+		t.Errorf("super dispatch: got %v, want 2", obj.PrintString())
+	}
+}
+
+func TestEval_Composition_GlobalAccessFromMethod(t *testing.T) {
+	// Methods must be able to access global variables like Counter.
+	src := `
+object Foo {
+    | n |
+    init  [ n := 0 ]
+    run   [ n := n + 1. ^n ]
+}
+object Bar {
+    compose Foo.
+    run [
+        | result |
+        result := super run.
+        ^result * 2
+    ]
+}
+| b |
+b := Bar new.
+b run.`
+	obj := evalSrc(t, src)
+	if obj.IVal != 2 {
+		t.Errorf("global access in method: got %v, want 2", obj.PrintString())
+	}
+}
+
+// --- missing number methods -------------------------------------------------
+
+func TestEval_IntSqrt(t *testing.T) {
+	obj := evalSrc(t, "9 sqrt.")
+	if obj.Kind != object.KindFloat || obj.FVal != 3.0 {
+		t.Errorf("9 sqrt: got %v", obj.PrintString())
+	}
+}
+
+func TestEval_FloatFloor(t *testing.T) {
+	obj := evalSrc(t, "3.7 floor.")
+	if obj.Kind != object.KindSmallInt || obj.IVal != 3 {
+		t.Errorf("3.7 floor: got %v", obj.PrintString())
+	}
+}
+
+func TestEval_FloatCeiling(t *testing.T) {
+	obj := evalSrc(t, "3.2 ceiling.")
+	if obj.Kind != object.KindSmallInt || obj.IVal != 4 {
+		t.Errorf("3.2 ceiling: got %v", obj.PrintString())
+	}
+}
+
+func TestEval_FloatRounded(t *testing.T) {
+	obj := evalSrc(t, "3.5 rounded.")
+	if obj.Kind != object.KindSmallInt || obj.IVal != 4 {
+		t.Errorf("3.5 rounded: got %v", obj.PrintString())
+	}
+}
+
+func TestEval_IntFloor(t *testing.T) {
+	obj := evalSrc(t, "5 floor.")
+	if obj.Kind != object.KindSmallInt || obj.IVal != 5 {
+		t.Errorf("5 floor: got %v", obj.PrintString())
+	}
+}
+
+// --- missing string methods -------------------------------------------------
+
+func TestEval_StringAt(t *testing.T) {
+	obj := evalSrc(t, "'hello' at: 1.")
+	if obj.Kind != object.KindChar || obj.RVal != 'h' {
+		t.Errorf("'hello' at: 1: got %v", obj.PrintString())
+	}
+}
+
+func TestEval_StringAt_OutOfBounds(t *testing.T) {
+	err := evalErr(t, "'hello' at: 10.")
+	if !strings.Contains(err.Error(), "IndexOutOfBounds") {
+		t.Errorf("expected IndexOutOfBounds, got %v", err)
+	}
+}
+
+func TestEval_StringCopyFromTo(t *testing.T) {
+	obj := evalSrc(t, "'hello world' copyFrom: 7 to: 11.")
+	if obj.Kind != object.KindString || obj.SVal != "world" {
+		t.Errorf("copyFrom:to:: got %q", obj.SVal)
+	}
+}
+
+func TestEval_StringIncludesSubString(t *testing.T) {
+	obj := evalSrc(t, "'hello world' includesSubString: 'world'.")
+	if obj != object.True {
+		t.Errorf("includesSubString: got %v", obj.PrintString())
+	}
+}
+
+func TestEval_StringAsInteger(t *testing.T) {
+	obj := evalSrc(t, "'42' asInteger.")
+	if obj.Kind != object.KindSmallInt || obj.IVal != 42 {
+		t.Errorf("'42' asInteger: got %v", obj.PrintString())
+	}
+}
+
+func TestEval_StringAsFloat(t *testing.T) {
+	obj := evalSrc(t, "'3.14' asFloat.")
+	if obj.Kind != object.KindFloat || obj.FVal != 3.14 {
+		t.Errorf("'3.14' asFloat: got %v", obj.PrintString())
+	}
+}
+
+// --- Array class ------------------------------------------------------------
+
+func TestEval_ArrayNewSize(t *testing.T) {
+	obj := evalSrc(t, "Array new: 3.")
+	if obj.Kind != object.KindArray || len(obj.Items) != 3 {
+		t.Errorf("Array new: 3: got %v", obj.PrintString())
+	}
+}
+
+func TestEval_ArrayNewWithAll(t *testing.T) {
+	obj := evalSrc(t, "Array new: 3 withAll: 0.")
+	if obj.Kind != object.KindArray || len(obj.Items) != 3 {
+		t.Fatalf("Array new:withAll:: got %v", obj.PrintString())
+	}
+	for _, item := range obj.Items {
+		if item.Kind != object.KindSmallInt || item.IVal != 0 {
+			t.Errorf("expected 0 element, got %v", item.PrintString())
+		}
+	}
+}
+
+func TestEval_ArrayDetect(t *testing.T) {
+	obj := evalSrc(t, "#(1 2 3 4 5) detect: [ :each | each > 3 ].")
+	if obj.Kind != object.KindSmallInt || obj.IVal != 4 {
+		t.Errorf("detect: got %v, want 4", obj.PrintString())
+	}
+}
+
+func TestEval_ArrayDetect_NotFound(t *testing.T) {
+	err := evalErr(t, "#(1 2 3) detect: [ :each | each > 10 ].")
+	if !strings.Contains(err.Error(), "ElementNotFound") {
+		t.Errorf("expected ElementNotFound, got %v", err)
+	}
+}
+
+// --- to:do: loop ------------------------------------------------------------
+
+func TestEval_ToDo(t *testing.T) {
+	src := `
+| sum |
+sum := 0.
+1 to: 5 do: [ :i | sum := sum + i ].
+sum.`
+	obj := evalSrc(t, src)
+	if obj.IVal != 15 {
+		t.Errorf("to:do: got %v, want 15", obj.PrintString())
+	}
+}
