@@ -385,6 +385,12 @@ func (p *Parser) parseInt() *ast.IntLit {
 	raw := p.cur.Literal
 	if idx := strings.IndexByte(raw, 'r'); idx >= 0 {
 		base, _ := strconv.ParseInt(raw[:idx], 10, 64)
+		// Clamp base to the valid range for strconv.ParseInt (2–36).
+		if base < 2 {
+			base = 2
+		} else if base > 36 {
+			base = 36
+		}
 		val, _ := strconv.ParseInt(raw[idx+1:], int(base), 64)
 		n.Value = val
 	} else {
@@ -410,6 +416,12 @@ func (p *Parser) parseByteArrayLit() *ast.ByteArrayLit {
 	inner = strings.TrimSuffix(inner, "]")
 	for _, part := range strings.Fields(inner) {
 		v, _ := strconv.ParseInt(part, 10, 16)
+		// Clamp to valid byte range 0–255.
+		if v < 0 {
+			v = 0
+		} else if v > 255 {
+			v = 255
+		}
 		n.Bytes = append(n.Bytes, byte(v))
 	}
 	return n
