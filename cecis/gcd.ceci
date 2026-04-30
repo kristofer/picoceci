@@ -1,0 +1,17 @@
+"Greatest Common Divisor — Euclidean algorithm"
+| gcd |
+gcd := [ :a :b |
+    [ b ~= 0 ] whileTrue: [ | t |
+        t := b.
+        b := a \\ b.
+        a := t
+    ].
+    a
+].
+Console println: (gcd value: 48 value: 18) printString.
+Console println: (gcd value: 100 value: 75) printString.
+Console println: (gcd value: 56 value: 98) printString.
+"Expected:
+6
+25
+14"

@@ -1,0 +1,23 @@
+"Bubble Sort — sorts an array of integers in ascending order"
+| arr n swapped |
+arr := Array new: 6.
+arr at: 1 put: 64.
+arr at: 2 put: 34.
+arr at: 3 put: 25.
+arr at: 4 put: 12.
+arr at: 5 put: 22.
+arr at: 6 put: 11.
+n := arr size.
+[ swapped := false.
+  1 to: n - 1 do: [ :i |
+      ((arr at: i) > (arr at: i + 1))
+          ifTrue: [ | t |
+              t := arr at: i.
+              arr at: i put: (arr at: i + 1).
+              arr at: i + 1 put: t.
+              swapped := true
+          ]
+  ].
+  swapped ] whileTrue.
+Console println: arr printString.
+"Expected: (11 12 22 25 34 64 )"
