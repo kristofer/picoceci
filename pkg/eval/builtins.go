@@ -80,13 +80,21 @@ func makeArrayClass() *object.Object {
 	}
 	o.Methods["new:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
 		if len(args) > 0 && args[0].Kind == object.KindSmallInt {
-			return object.ArrayObject(int(args[0].IVal)), nil
+			n := args[0].IVal
+			if n < 0 || n > math.MaxInt {
+				return object.ArrayObject(0), nil
+			}
+			return object.ArrayObject(int(n)), nil
 		}
 		return object.ArrayObject(0), nil
 	}}
 	o.Methods["new:withAll:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
 		if len(args) == 2 && args[0].Kind == object.KindSmallInt {
-			size := int(args[0].IVal)
+			n := args[0].IVal
+			if n < 0 || n > math.MaxInt {
+				return object.ArrayObject(0), nil
+			}
+			size := int(n)
 			arr := &object.Object{Kind: object.KindArray, Items: make([]*object.Object, size)}
 			for i := range arr.Items {
 				arr.Items[i] = args[1]
@@ -559,8 +567,9 @@ func stringDispatch(interp *Interpreter, recv *object.Object, sel string, args [
 		if len(args) > 0 && args[0].Kind == object.KindSmallInt {
 			runes := []rune(s)
 			idx64 := args[0].IVal
-			if idx64 < 1 || idx64 > int64(len(runes)) {
-				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds (size %d)", idx64, len(runes)), Pos: p}, true
+			nRunes := int64(len(runes))
+			if idx64 < 1 || idx64 > nRunes || idx64 > math.MaxInt {
+				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds (size %d)", idx64, nRunes), Pos: p}, true
 			}
 			return object.CharObject(runes[int(idx64)-1]), nil, true
 		}
@@ -576,7 +585,7 @@ func stringDispatch(interp *Interpreter, recv *object.Object, sel string, args [
 			if stop64 > n {
 				stop64 = n
 			}
-			if start64 > stop64 {
+			if start64 > stop64 || stop64 > math.MaxInt {
 				return object.StringObject(""), nil, true
 			}
 			return object.StringObject(string(runes[int(start64):int(stop64)])), nil, true
@@ -641,15 +650,17 @@ func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 	case "at:":
 		if len(args) > 0 && args[0].Kind == object.KindSmallInt {
 			idx64 := args[0].IVal
-			if idx64 < 1 || idx64 > int64(len(items)) {
-				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds (size %d)", idx64, len(items)), Pos: p}, true
+			nItems := int64(len(items))
+			if idx64 < 1 || idx64 > nItems || idx64 > math.MaxInt {
+				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds (size %d)", idx64, nItems), Pos: p}, true
 			}
 			return items[int(idx64)-1], nil, true
 		}
 	case "at:put:":
 		if len(args) == 2 && args[0].Kind == object.KindSmallInt {
 			idx64 := args[0].IVal
-			if idx64 < 1 || idx64 > int64(len(items)) {
+			nItems := int64(len(items))
+			if idx64 < 1 || idx64 > nItems || idx64 > math.MaxInt {
 				return nil, &Error{Kind: "IndexOutOfBounds", Message: fmt.Sprintf("index %d out of bounds", idx64), Pos: p}, true
 			}
 			items[int(idx64)-1] = args[1]
