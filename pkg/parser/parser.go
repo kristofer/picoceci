@@ -71,7 +71,12 @@ func (p *Parser) parseTopLevel() ast.Node {
 	case lexer.IMPORT:
 		return p.parseImport()
 	case lexer.OBJECT:
-		return p.parseObjectDecl()
+		// Distinguish: named object decl (object Name { ... })
+		// vs anonymous object literal used as an expression (object { ... }).
+		if p.peek.Kind == lexer.IDENTIFIER {
+			return p.parseObjectDecl()
+		}
+		return p.parseStatement()
 	case lexer.INTERFACE:
 		return p.parseInterfaceDecl()
 	default:
@@ -362,6 +367,12 @@ func (p *Parser) parsePrimary() ast.Node {
 		n := &ast.SuperExpr{Pos: pos(p.cur)}
 		p.advance()
 		return n
+	case lexer.THISCONTEXT:
+		n := &ast.ThisContextExpr{Pos: pos(p.cur)}
+		p.advance()
+		return n
+	case lexer.OBJECT:
+		return p.parseAnonObjectLit()
 	case lexer.IDENTIFIER:
 		n := &ast.Ident{Pos: pos(p.cur), Name: p.cur.Literal}
 		p.advance()
@@ -435,6 +446,27 @@ func (p *Parser) parseArrayLit() *ast.ArrayLit {
 		n.Elements = append(n.Elements, elem)
 	}
 	p.expect(lexer.RPAREN)
+	return n
+}
+
+func (p *Parser) parseAnonObjectLit() *ast.AnonObjectLit {
+	n := &ast.AnonObjectLit{Pos: pos(p.cur)}
+	p.expect(lexer.OBJECT)
+	p.expect(lexer.LBRACE)
+	for p.cur.Kind != lexer.RBRACE && p.cur.Kind != lexer.EOF {
+		if p.cur.Kind != lexer.IDENTIFIER {
+			p.errorf("expected slot name in anonymous object, got %q", p.cur.Literal)
+			p.advance()
+			continue
+		}
+		slot := ast.AnonSlot{Name: p.cur.Literal}
+		p.advance()
+		p.expect(lexer.ASSIGN)
+		slot.Value = p.parseExpression()
+		n.Slots = append(n.Slots, slot)
+		p.consumeOptional(lexer.DOT)
+	}
+	p.expect(lexer.RBRACE)
 	return n
 }
 

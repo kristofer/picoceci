@@ -266,3 +266,167 @@ func TestParser_NoPanicOnGarbage(t *testing.T) {
 		}()
 	}
 }
+
+// TestParser_ErrorRecovery_UnbalancedBracket verifies a meaningful error for `[`.
+func TestParser_ErrorRecovery_UnbalancedBracket(t *testing.T) {
+	l := lexer.NewString("[ 42")
+	p := parser.New(l)
+	_, err := p.ParseProgram()
+	if err == nil {
+		t.Error("expected parse error for unbalanced [, got nil")
+	}
+}
+
+// TestParser_ErrorRecovery_MissingDot verifies that a missing statement
+// terminator does not cause a panic.
+func TestParser_ErrorRecovery_MissingDot(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("parser panicked on missing dot: %v", r)
+		}
+	}()
+	l := lexer.NewString("42")
+	p := parser.New(l)
+	prog, _ := p.ParseProgram()
+	if len(prog.Statements) != 1 {
+		t.Errorf("expected 1 statement without trailing dot, got %d", len(prog.Statements))
+	}
+}
+
+// TestParser_LanguageSpec_Examples round-trips all significant code examples
+// from LANGUAGE_SPEC.md to confirm they parse without error.
+func TestParser_LanguageSpec_Examples(t *testing.T) {
+	examples := []struct {
+		name string
+		src  string
+	}{
+		// §2.5 Literals
+		{"integer decimal", "42."},
+		{"integer hex", "16rFF."},
+		{"integer binary", "2r1010."},
+		{"float", "3.14."},
+		{"float exp", "1.5e-3."},
+		{"character", "$A."},
+		{"string", "'Hello'."},
+		{"string escaped quote", "'it''s fine'."},
+		{"symbol ident", "#hello."},
+		{"symbol keyword", "#at:put:."},
+		{"symbol quoted", "#'with spaces'."},
+		{"byte array", "#[1 2 3 255]."},
+		{"array literal", "#(1 'two' #three)."},
+		{"bool true", "true."},
+		{"bool false", "false."},
+		{"nil", "nil."},
+		// §4 Expressions
+		{"unary message", "42 factorial."},
+		{"unary chain", "'hello' reversed."},
+		{"binary message", "3 + 4."},
+		{"keyword message one arg", "collection at: 2."},
+		{"keyword message two args", "dict at: #key put: value."},
+		{"assignment", "| x y |\nx := 42.\ny := x + 1."},
+		{"cascade", "Transcript\n    print: 'a';\n    print: 'b';\n    nl."},
+		{"return", "^value."},
+		{"self", "self."},
+		{"super", "super."},
+		{"thisContext", "thisContext."},
+		{"parenthesised", "(3 + 4) * 2."},
+		// §5.1 Object declaration
+		{"object Counter", `
+object Counter {
+    | count |
+    init [ count := 0 ]
+    inc  [ count := count + 1. ^self ]
+    dec  [ count := count - 1. ^self ]
+    value [ ^count ]
+    printString [ ^'Counter(', count printString, ')' ]
+}`},
+		{"object creating instances", "| c |\nc := Counter new."},
+		{"object composition", `
+object LoggedCounter {
+    compose Counter.
+    inc [
+        count := count + 1.
+        Console println: 'incremented to ', count printString.
+        ^self
+    ]
+}`},
+		{"anonymous object literal", "| point |\npoint := object { x := 3. y := 4 }."},
+		// §6 Interfaces
+		{"interface", `
+interface Incrementable {
+    inc
+    dec
+    value
+}`},
+		// §7 Control flow
+		{"ifTrue:ifFalse:", "x > 0\n    ifTrue:  [ Console println: 'positive' ]\n    ifFalse: [ Console println: 'non-positive' ]."},
+		{"ifTrue: with return", "(x = 0)\n    ifTrue: [ ^0 ]."},
+		{"to:do:", "1 to: 10 do: [ :i | Console println: i printString ]."},
+		{"whileTrue:", "[ x > 0 ] whileTrue: [ x := x - 1 ]."},
+		{"whileFalse:", "[ x < 0 ] whileFalse: [ x := x + 1 ]."},
+		{"timesRepeat:", "5 timesRepeat: [ Console println: 'tick' ]."},
+		{"do:", "#(1 2 3) do: [ :each | Console println: each printString ]."},
+		{"collect:", "| doubled |\ndoubled := #(1 2 3) collect: [ :each | each * 2 ]."},
+		{"inject:into:", "| sum |\nsum := #(1 2 3) inject: 0 into: [ :acc :each | acc + each ]."},
+		// §8 Blocks
+		{"block two params", "[ :x :y | x + y ]."},
+		{"block closure", "| adder |\nadder := [ :n | [ :x | x + n ] ].\n(adder value: 5) value: 3."},
+		// §9 Error handling
+		{"on:do:", "[ someRiskyOperation ]\n    on: Error\n    do: [ :err | Console println: err messageText ]."},
+		{"ensure:", "[ file read ]\n    ensure: [ file close ]."},
+		// import
+		{"import", "import 'Counter'."},
+	}
+
+	for _, ex := range examples {
+		ex := ex
+		t.Run(ex.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("parser panicked: %v", r)
+				}
+			}()
+			l := lexer.NewString(ex.src)
+			p := parser.New(l)
+			prog, err := p.ParseProgram()
+			if err != nil {
+				t.Errorf("parse error: %v", err)
+			}
+			if prog == nil {
+				t.Error("got nil program")
+			}
+		})
+	}
+}
+
+// TestParser_AnonObjectLit verifies anonymous object literal parsing.
+func TestParser_AnonObjectLit(t *testing.T) {
+	prog := parse(t, "object { x := 3. y := 4 }.")
+	if len(prog.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(prog.Statements))
+	}
+	anon, ok := prog.Statements[0].(*ast.AnonObjectLit)
+	if !ok {
+		t.Fatalf("expected *ast.AnonObjectLit, got %T", prog.Statements[0])
+	}
+	if len(anon.Slots) != 2 {
+		t.Errorf("expected 2 slots, got %d", len(anon.Slots))
+	}
+	if anon.Slots[0].Name != "x" {
+		t.Errorf("slot[0].Name: got %q, want \"x\"", anon.Slots[0].Name)
+	}
+	if anon.Slots[1].Name != "y" {
+		t.Errorf("slot[1].Name: got %q, want \"y\"", anon.Slots[1].Name)
+	}
+}
+
+// TestParser_ThisContext verifies that thisContext parses as a primary.
+func TestParser_ThisContext(t *testing.T) {
+	prog := parse(t, "thisContext.")
+	if len(prog.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(prog.Statements))
+	}
+	if _, ok := prog.Statements[0].(*ast.ThisContextExpr); !ok {
+		t.Fatalf("expected *ast.ThisContextExpr, got %T", prog.Statements[0])
+	}
+}

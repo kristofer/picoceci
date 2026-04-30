@@ -58,10 +58,10 @@ picoceci/
 
 - [x] Create `README.md`, `LANGUAGE_SPEC.md`, `IMPLEMENTATION_PLAN.md`
 - [x] Create `docs/grammar.ebnf`, `docs/stdlib.md`, `docs/freertos-bridge.md`, `docs/sdcard.md`
-- [ ] Create `go.mod` with module path `github.com/kristofer/picoceci`
-- [ ] Create directory skeleton with placeholder `doc.go` files
-- [ ] Add `.github/workflows/ci.yml` — `go build ./...` and `go test ./...`
-- [ ] Add `.gitignore` for Go build artifacts
+- [x] Create `go.mod` with module path `github.com/kristofer/picoceci`
+- [x] Create directory skeleton with placeholder `doc.go` files
+- [x] Add `.github/workflows/ci.yml` — `go build ./...` and `go test ./...`
+- [x] Add `.gitignore` for Go build artifacts
 
 ### Acceptance criteria
 
@@ -70,7 +70,7 @@ picoceci/
 
 ---
 
-## Phase 1 — Lexer and Parser
+## Phase 1 — Lexer and Parser ✅
 
 **Goal:** Produce a correct AST from picoceci source text.
 

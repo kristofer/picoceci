@@ -147,3 +147,38 @@ func TestLexer_NoPanic_RandomInput(t *testing.T) {
 		}()
 	}
 }
+
+// FuzzLexer verifies that the lexer never panics on arbitrary input.
+func FuzzLexer(f *testing.F) {
+	seeds := []string{
+		"42 factorial.",
+		"'hello' size.",
+		"#foo.",
+		"$A.",
+		"#[1 2 3].",
+		"#(1 'two' #three).",
+		"object Counter { | count | init [ count := 0 ] }",
+		"[ :x | x + 1 ].",
+		"",
+		"'unterminated",
+		"$",
+		"##",
+		"\x00\xff",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, data string) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("lexer panicked on input %q: %v", data, r)
+			}
+		}()
+		l := lexer.NewString(data)
+		for i := 0; i < 10000; i++ {
+			if l.Next().Kind == lexer.EOF {
+				break
+			}
+		}
+	})
+}
