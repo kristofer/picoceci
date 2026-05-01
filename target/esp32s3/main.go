@@ -15,6 +15,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/kristofer/picoceci/pkg/bytecode"
 	"github.com/kristofer/picoceci/pkg/lexer"
 	"github.com/kristofer/picoceci/pkg/parser"
@@ -50,8 +52,13 @@ func main() {
 	//
 	// Phase 5 will add: UART0 init, SD card mount, full REPL.
 
+	// Wait for USB CDC to initialize before printing
+	time.Sleep(2 * time.Second)
+
+	println("picoceci starting...")
+
 	// Test program: compute 10 factorial
-	_ = runProgram(`
+	err := runProgram(`
 		| factorial n result |
 		factorial := [ :x |
 			x <= 1 ifTrue: [ 1 ] ifFalse: [ x * (factorial value: x - 1) ]
@@ -59,6 +66,14 @@ func main() {
 		result := factorial value: 10.
 		result.
 	`)
+
+	if err != nil {
+		println("error:", err.Error())
+	} else {
+		println("factorial test passed!")
+	}
+
+	println("entering idle loop...")
 
 	// Keep running (TinyGo requirement)
 	for {

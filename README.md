@@ -73,6 +73,19 @@ picoceci/
 
 picoceci is intended to run as a user-space scripting layer on top of the Canal capability microkernel.  Canal provides isolated capability objects; picoceci objects map naturally onto Canal capabilities, letting scripts safely compose and invoke kernel services without raw pointer access.
 
+## Notes
+
+See <https://tinygo.org/docs/tutorials/serialmonitor/>
+and <https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/get-started/establish-serial-connection.html> for serial console access to the ESP32-S3.
+
+use
+
+```bash
+tinygo flash -target=esp32s3-generic -port=/dev/cu.usbmodem11201 ./target/esp32s3 && tinygo monitor
+```
+
+to load and run.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
