@@ -14,16 +14,54 @@
 // See IMPLEMENTATION_PLAN.md Phase 5 for implementation notes.
 package main
 
-// NOTE: This file is a skeleton.  The actual TinyGo machine/sdcard imports
-// and FreeRTOS bindings will be added in Phase 5 of the implementation.
-//
-// The build tag ensures this file is ONLY compiled by TinyGo, keeping the
-// desktop build (go build ./...) clean.
+import (
+	"github.com/kristofer/picoceci/pkg/bytecode"
+	"github.com/kristofer/picoceci/pkg/lexer"
+	"github.com/kristofer/picoceci/pkg/parser"
+)
+
+// runProgram compiles and runs a picoceci program using the bytecode VM.
+func runProgram(src string) error {
+	// Parse the source
+	l := lexer.NewString(src)
+	p := parser.New(l)
+	prog, err := p.ParseProgram()
+	if err != nil {
+		return err
+	}
+
+	// Compile to bytecode
+	c := bytecode.NewCompiler()
+	chunk, err := c.Compile(prog.Statements)
+	if err != nil {
+		return err
+	}
+
+	// Create and run VM
+	vm := bytecode.NewVM()
+	vm.SetBlocks(c.GetBlocks())
+	_, err = vm.Run(chunk)
+	return err
+}
 
 func main() {
-	// Phase 5: Initialise UART0, mount SD card, start REPL.
-	// Placeholder — will be filled in during Phase 5 implementation.
+	// Phase 3: Simple test using bytecode VM
+	// This demonstrates the VM is functional on the target platform.
+	//
+	// Phase 5 will add: UART0 init, SD card mount, full REPL.
+
+	// Test program: compute 10 factorial
+	_ = runProgram(`
+		| factorial n result |
+		factorial := [ :x |
+			x <= 1 ifTrue: [ 1 ] ifFalse: [ x * (factorial value: x - 1) ]
+		].
+		result := factorial value: 10.
+		result.
+	`)
+
+	// Keep running (TinyGo requirement)
 	for {
-		// idle loop so TinyGo doesn't complain about empty main
+		// idle loop
 	}
 }

@@ -10,26 +10,41 @@ import (
 	"github.com/kristofer/picoceci/pkg/object"
 )
 
-// registerBuiltins populates the global environment with built-in objects.
-func registerBuiltins(env *Env) {
-	env.Define("nil")
-	env.Set("nil", object.Nil)
-	env.Define("true")
-	env.Set("true", object.True)
-	env.Define("false")
-	env.Set("false", object.False)
+// BlockCaller is an interface that allows builtins to invoke blocks.
+// Both the tree-walking interpreter and bytecode VM implement this.
+type BlockCaller interface {
+	CallBlock(blk *object.Object, args []*object.Object) (*object.Object, error)
+}
+
+// InitialGlobals returns a map of global names to their initial values.
+// This includes: nil, true, false, Console, Transcript, Array.
+// Both the tree-walking interpreter and bytecode VM use this.
+func InitialGlobals() map[string]*object.Object {
+	globals := make(map[string]*object.Object)
+
+	globals["nil"] = object.Nil
+	globals["true"] = object.True
+	globals["false"] = object.False
 
 	// Console / Transcript
 	console := makeConsole()
-	env.Define("Console")
-	env.Set("Console", console)
-	env.Define("Transcript")
-	env.Set("Transcript", console)
+	globals["Console"] = console
+	globals["Transcript"] = console
 
-	// Array class object — responds to new: and new:withAll:
-	arrayClass := makeArrayClass()
-	env.Define("Array")
-	env.Set("Array", arrayClass)
+	// Array class object
+	globals["Array"] = makeArrayClass()
+
+	return globals
+}
+
+// registerBuiltins populates the global environment with built-in objects.
+// This is used by the tree-walking interpreter.
+func registerBuiltins(env *Env) {
+	globals := InitialGlobals()
+	for name, val := range globals {
+		env.Define(name)
+		env.Set(name, val)
+	}
 }
 
 func displayString(o *object.Object) string {
@@ -106,28 +121,36 @@ func makeArrayClass() *object.Object {
 	return o
 }
 
-// builtinDispatch handles message sends to primitive types.
-// Returns (result, error, handled).
-func builtinDispatch(interp *Interpreter, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
+// BuiltinDispatch handles message sends to primitive types.
+// Returns (result, error, handled). If handled is false, the caller should
+// look for a method in the receiver's method table.
+// This is exported for use by both the tree-walking interpreter and bytecode VM.
+func BuiltinDispatch(caller BlockCaller, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
 	switch recv.Kind {
 	case object.KindSmallInt:
-		return intDispatch(interp, recv, sel, args, p)
+		return intDispatch(caller, recv, sel, args, p)
 	case object.KindFloat:
 		return floatDispatch(recv, sel, args, p)
 	case object.KindBool:
-		return boolDispatch(interp, recv, sel, args, p)
+		return boolDispatch(caller, recv, sel, args, p)
 	case object.KindString:
-		return stringDispatch(interp, recv, sel, args, p)
+		return stringDispatch(caller, recv, sel, args, p)
 	case object.KindSymbol:
 		return symbolDispatch(recv, sel, args, p)
 	case object.KindArray:
-		return arrayDispatch(interp, recv, sel, args, p)
+		return arrayDispatch(caller, recv, sel, args, p)
 	case object.KindBlock:
-		return blockDispatch(interp, recv, sel, args, p)
+		return blockDispatch(caller, recv, sel, args, p)
 	case object.KindNil:
 		return nilDispatch(recv, sel, args, p)
 	}
 	return nil, nil, false
+}
+
+// builtinDispatch is the internal version that takes *Interpreter.
+// Kept for backward compatibility within the eval package.
+func builtinDispatch(interp *Interpreter, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
+	return BuiltinDispatch(interp, recv, sel, args, p)
 }
 
 // --- nil --------------------------------------------------------------------
@@ -156,7 +179,7 @@ func nilDispatch(recv *object.Object, sel string, args []*object.Object, p ast.P
 
 // --- integers ---------------------------------------------------------------
 
-func intDispatch(interp *Interpreter, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
+func intDispatch(caller BlockCaller, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
 	a := recv.IVal
 	arg0 := func() (*object.Object, bool) {
 		if len(args) == 0 {
@@ -313,7 +336,7 @@ func intDispatch(interp *Interpreter, recv *object.Object, sel string, args []*o
 		blk, ok := arg0()
 		if ok && blk.Kind == object.KindBlock {
 			for i := int64(0); i < a; i++ {
-				if _, err := interp.CallBlock(blk, nil); err != nil {
+				if _, err := caller.CallBlock(blk, nil); err != nil {
 					return nil, err, true
 				}
 			}
@@ -325,7 +348,7 @@ func intDispatch(interp *Interpreter, recv *object.Object, sel string, args []*o
 			blk := args[1]
 			if limit.Kind == object.KindSmallInt && blk.Kind == object.KindBlock {
 				for i := a; i <= limit.IVal; i++ {
-					if _, err := interp.CallBlock(blk, []*object.Object{object.IntObject(i)}); err != nil {
+					if _, err := caller.CallBlock(blk, []*object.Object{object.IntObject(i)}); err != nil {
 						return nil, err, true
 					}
 				}
@@ -438,18 +461,18 @@ func floatDispatch(recv *object.Object, sel string, args []*object.Object, p ast
 
 // --- booleans ---------------------------------------------------------------
 
-func boolDispatch(interp *Interpreter, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
+func boolDispatch(caller BlockCaller, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
 	b := recv.BVal
 	switch sel {
 	case "ifTrue:":
 		if b && len(args) > 0 && args[0].Kind == object.KindBlock {
-			res, err := interp.CallBlock(args[0], nil)
+			res, err := caller.CallBlock(args[0], nil)
 			return res, err, true
 		}
 		return object.Nil, nil, true
 	case "ifFalse:":
 		if !b && len(args) > 0 && args[0].Kind == object.KindBlock {
-			res, err := interp.CallBlock(args[0], nil)
+			res, err := caller.CallBlock(args[0], nil)
 			return res, err, true
 		}
 		return object.Nil, nil, true
@@ -460,7 +483,7 @@ func boolDispatch(interp *Interpreter, recv *object.Object, sel string, args []*
 				blk = args[1]
 			}
 			if blk.Kind == object.KindBlock {
-				res, err := interp.CallBlock(blk, nil)
+				res, err := caller.CallBlock(blk, nil)
 				return res, err, true
 			}
 		}
@@ -472,7 +495,7 @@ func boolDispatch(interp *Interpreter, recv *object.Object, sel string, args []*
 				blk = args[0]
 			}
 			if blk.Kind == object.KindBlock {
-				res, err := interp.CallBlock(blk, nil)
+				res, err := caller.CallBlock(blk, nil)
 				return res, err, true
 			}
 		}
@@ -507,7 +530,7 @@ func boolDispatch(interp *Interpreter, recv *object.Object, sel string, args []*
 
 // --- strings ----------------------------------------------------------------
 
-func stringDispatch(interp *Interpreter, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
+func stringDispatch(caller BlockCaller, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
 	s := recv.SVal
 	switch sel {
 	case "size":
@@ -607,7 +630,7 @@ func stringDispatch(interp *Interpreter, recv *object.Object, sel string, args [
 	case "do:":
 		if len(args) > 0 && args[0].Kind == object.KindBlock {
 			for _, r := range s {
-				if _, err := interp.CallBlock(args[0], []*object.Object{object.CharObject(r)}); err != nil {
+				if _, err := caller.CallBlock(args[0], []*object.Object{object.CharObject(r)}); err != nil {
 					return nil, err, true
 				}
 			}
@@ -642,7 +665,7 @@ func symbolDispatch(recv *object.Object, sel string, args []*object.Object, p as
 
 // --- arrays -----------------------------------------------------------------
 
-func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
+func arrayDispatch(caller BlockCaller, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
 	items := recv.Items
 	switch sel {
 	case "size":
@@ -679,7 +702,7 @@ func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 	case "do:":
 		if len(args) > 0 && args[0].Kind == object.KindBlock {
 			for _, item := range items {
-				if _, err := interp.CallBlock(args[0], []*object.Object{item}); err != nil {
+				if _, err := caller.CallBlock(args[0], []*object.Object{item}); err != nil {
 					return nil, err, true
 				}
 			}
@@ -689,7 +712,7 @@ func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 		if len(args) > 0 && args[0].Kind == object.KindBlock {
 			result := object.ArrayObject(len(items))
 			for i, item := range items {
-				v, err := interp.CallBlock(args[0], []*object.Object{item})
+				v, err := caller.CallBlock(args[0], []*object.Object{item})
 				if err != nil {
 					return nil, err, true
 				}
@@ -701,7 +724,7 @@ func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 		if len(args) > 0 && args[0].Kind == object.KindBlock {
 			var result []*object.Object
 			for _, item := range items {
-				v, err := interp.CallBlock(args[0], []*object.Object{item})
+				v, err := caller.CallBlock(args[0], []*object.Object{item})
 				if err != nil {
 					return nil, err, true
 				}
@@ -716,7 +739,7 @@ func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 		if len(args) == 2 && args[1].Kind == object.KindBlock {
 			acc := args[0]
 			for _, item := range items {
-				v, err := interp.CallBlock(args[1], []*object.Object{acc, item})
+				v, err := caller.CallBlock(args[1], []*object.Object{acc, item})
 				if err != nil {
 					return nil, err, true
 				}
@@ -727,7 +750,7 @@ func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 	case "detect:":
 		if len(args) > 0 && args[0].Kind == object.KindBlock {
 			for _, item := range items {
-				v, err := interp.CallBlock(args[0], []*object.Object{item})
+				v, err := caller.CallBlock(args[0], []*object.Object{item})
 				if err != nil {
 					return nil, err, true
 				}
@@ -740,7 +763,7 @@ func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 	case "withIndexDo:":
 		if len(args) > 0 && args[0].Kind == object.KindBlock {
 			for i, item := range items {
-				if _, err := interp.CallBlock(args[0], []*object.Object{object.IntObject(int64(i + 1)), item}); err != nil {
+				if _, err := caller.CallBlock(args[0], []*object.Object{object.IntObject(int64(i + 1)), item}); err != nil {
 					return nil, err, true
 				}
 			}
@@ -762,33 +785,33 @@ func arrayDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 
 // --- blocks -----------------------------------------------------------------
 
-func blockDispatch(interp *Interpreter, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
+func blockDispatch(caller BlockCaller, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
 	switch sel {
 	case "value":
-		res, err := interp.CallBlock(recv, nil)
+		res, err := caller.CallBlock(recv, nil)
 		return res, err, true
 	case "value:":
-		res, err := interp.CallBlock(recv, args)
+		res, err := caller.CallBlock(recv, args)
 		return res, err, true
 	case "value:value:":
-		res, err := interp.CallBlock(recv, args)
+		res, err := caller.CallBlock(recv, args)
 		return res, err, true
 	case "valueWithArguments:":
 		if len(args) > 0 && args[0].Kind == object.KindArray {
-			res, err := interp.CallBlock(recv, args[0].Items)
+			res, err := caller.CallBlock(recv, args[0].Items)
 			return res, err, true
 		}
 	case "whileTrue:":
 		if len(args) > 0 && args[0].Kind == object.KindBlock {
 			for {
-				cond, err := interp.CallBlock(recv, nil)
+				cond, err := caller.CallBlock(recv, nil)
 				if err != nil {
 					return nil, err, true
 				}
 				if !cond.Truthy() {
 					break
 				}
-				if _, err = interp.CallBlock(args[0], nil); err != nil {
+				if _, err = caller.CallBlock(args[0], nil); err != nil {
 					return nil, err, true
 				}
 			}
@@ -796,7 +819,7 @@ func blockDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 		}
 	case "whileTrue":
 		for {
-			cond, err := interp.CallBlock(recv, nil)
+			cond, err := caller.CallBlock(recv, nil)
 			if err != nil {
 				return nil, err, true
 			}
@@ -808,14 +831,14 @@ func blockDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 	case "whileFalse:":
 		if len(args) > 0 && args[0].Kind == object.KindBlock {
 			for {
-				cond, err := interp.CallBlock(recv, nil)
+				cond, err := caller.CallBlock(recv, nil)
 				if err != nil {
 					return nil, err, true
 				}
 				if cond.Truthy() {
 					break
 				}
-				if _, err = interp.CallBlock(args[0], nil); err != nil {
+				if _, err = caller.CallBlock(args[0], nil); err != nil {
 					return nil, err, true
 				}
 			}
@@ -823,12 +846,12 @@ func blockDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 		}
 	case "on:do:":
 		if len(args) == 2 {
-			_, err := interp.CallBlock(recv, nil)
+			_, err := caller.CallBlock(recv, nil)
 			if err != nil {
 				// Check if it's a picoceci Error — if so, call the handler block.
 				if _, ok := err.(*Error); ok {
 					errObj := object.StringObject(err.Error())
-					res, herr := interp.CallBlock(args[1], []*object.Object{errObj})
+					res, herr := caller.CallBlock(args[1], []*object.Object{errObj})
 					return res, herr, true
 				}
 				return nil, err, true
@@ -837,8 +860,8 @@ func blockDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 		}
 	case "ensure:":
 		if len(args) > 0 && args[0].Kind == object.KindBlock {
-			res, err := interp.CallBlock(recv, nil)
-			_, _ = interp.CallBlock(args[0], nil) // always run
+			res, err := caller.CallBlock(recv, nil)
+			_, _ = caller.CallBlock(args[0], nil) // always run
 			return res, err, true
 		}
 	case "printString":
@@ -850,6 +873,3 @@ func blockDispatch(interp *Interpreter, recv *object.Object, sel string, args []
 	}
 	return nil, nil, false
 }
-
-// expose for use in blockDispatch above (same package)
-// (actual interpreter instance is threaded through all dispatch functions)
