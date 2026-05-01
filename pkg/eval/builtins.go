@@ -10,26 +10,55 @@ import (
 	"github.com/kristofer/picoceci/pkg/object"
 )
 
+// BlockCaller is a function that invokes a block closure with the given arguments.
+// It is used to decouple built-in dispatch from the concrete interpreter/VM.
+type BlockCaller func(blk *object.Object, args []*object.Object) (*object.Object, error)
+
+// InitialGlobals returns the built-in global objects shared by the tree-walking
+// interpreter and the bytecode VM.
+func InitialGlobals() map[string]*object.Object {
+	console := makeConsole()
+	return map[string]*object.Object{
+		"nil":        object.Nil,
+		"true":       object.True,
+		"false":      object.False,
+		"Console":    console,
+		"Transcript": console,
+		"Array":      makeArrayClass(),
+	}
+}
+
+// BuiltinDispatch dispatches a primitive message send to the appropriate handler.
+// cb is used to invoke block arguments (e.g. for ifTrue:, whileTrue:, etc.).
+// Returns (result, error, handled); handled is false when no built-in applies.
+func BuiltinDispatch(cb BlockCaller, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
+	switch recv.Kind {
+	case object.KindSmallInt:
+		return intDispatch(cb, recv, sel, args, p)
+	case object.KindFloat:
+		return floatDispatch(recv, sel, args, p)
+	case object.KindBool:
+		return boolDispatch(cb, recv, sel, args, p)
+	case object.KindString:
+		return stringDispatch(cb, recv, sel, args, p)
+	case object.KindSymbol:
+		return symbolDispatch(recv, sel, args, p)
+	case object.KindArray:
+		return arrayDispatch(cb, recv, sel, args, p)
+	case object.KindBlock:
+		return blockDispatch(cb, recv, sel, args, p)
+	case object.KindNil:
+		return nilDispatch(recv, sel, args, p)
+	}
+	return nil, nil, false
+}
+
 // registerBuiltins populates the global environment with built-in objects.
 func registerBuiltins(env *Env) {
-	env.Define("nil")
-	env.Set("nil", object.Nil)
-	env.Define("true")
-	env.Set("true", object.True)
-	env.Define("false")
-	env.Set("false", object.False)
-
-	// Console / Transcript
-	console := makeConsole()
-	env.Define("Console")
-	env.Set("Console", console)
-	env.Define("Transcript")
-	env.Set("Transcript", console)
-
-	// Array class object — responds to new: and new:withAll:
-	arrayClass := makeArrayClass()
-	env.Define("Array")
-	env.Set("Array", arrayClass)
+	for name, val := range InitialGlobals() {
+		env.Define(name)
+		env.Set(name, val)
+	}
 }
 
 func displayString(o *object.Object) string {
@@ -106,28 +135,9 @@ func makeArrayClass() *object.Object {
 	return o
 }
 
-// builtinDispatch handles message sends to primitive types.
-// Returns (result, error, handled).
+// builtinDispatch is the internal adapter used by the tree-walking interpreter.
 func builtinDispatch(interp *Interpreter, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
-	switch recv.Kind {
-	case object.KindSmallInt:
-		return intDispatch(interp, recv, sel, args, p)
-	case object.KindFloat:
-		return floatDispatch(recv, sel, args, p)
-	case object.KindBool:
-		return boolDispatch(interp, recv, sel, args, p)
-	case object.KindString:
-		return stringDispatch(interp, recv, sel, args, p)
-	case object.KindSymbol:
-		return symbolDispatch(recv, sel, args, p)
-	case object.KindArray:
-		return arrayDispatch(interp, recv, sel, args, p)
-	case object.KindBlock:
-		return blockDispatch(interp, recv, sel, args, p)
-	case object.KindNil:
-		return nilDispatch(recv, sel, args, p)
-	}
-	return nil, nil, false
+	return BuiltinDispatch(interp.CallBlock, recv, sel, args, p)
 }
 
 // --- nil --------------------------------------------------------------------
@@ -156,7 +166,7 @@ func nilDispatch(recv *object.Object, sel string, args []*object.Object, p ast.P
 
 // --- integers ---------------------------------------------------------------
 
-func intDispatch(interp *Interpreter, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
+func intDispatch(cb BlockCaller, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
 	a := recv.IVal
 	arg0 := func() (*object.Object, bool) {
 		if len(args) == 0 {
@@ -313,7 +323,7 @@ func intDispatch(interp *Interpreter, recv *object.Object, sel string, args []*o
 		blk, ok := arg0()
 		if ok && blk.Kind == object.KindBlock {
 			for i := int64(0); i < a; i++ {
-				if _, err := interp.CallBlock(blk, nil); err != nil {
+				if _, err := cb(blk, nil); err != nil {
 					return nil, err, true
 				}
 			}
@@ -325,7 +335,7 @@ func intDispatch(interp *Interpreter, recv *object.Object, sel string, args []*o
 			blk := args[1]
 			if limit.Kind == object.KindSmallInt && blk.Kind == object.KindBlock {
 				for i := a; i <= limit.IVal; i++ {
-					if _, err := interp.CallBlock(blk, []*object.Object{object.IntObject(i)}); err != nil {
+					if _, err := cb(blk, []*object.Object{object.IntObject(i)}); err != nil {
 						return nil, err, true
 					}
 				}
@@ -438,18 +448,18 @@ func floatDispatch(recv *object.Object, sel string, args []*object.Object, p ast
 
 // --- booleans ---------------------------------------------------------------
 
-func boolDispatch(interp *Interpreter, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
+func boolDispatch(cb BlockCaller, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
 	b := recv.BVal
 	switch sel {
 	case "ifTrue:":
 		if b && len(args) > 0 && args[0].Kind == object.KindBlock {
-			res, err := interp.CallBlock(args[0], nil)
+			res, err := cb(args[0], nil)
 			return res, err, true
 		}
 		return object.Nil, nil, true
 	case "ifFalse:":
 		if !b && len(args) > 0 && args[0].Kind == object.KindBlock {
-			res, err := interp.CallBlock(args[0], nil)
+			res, err := cb(args[0], nil)
 			return res, err, true
 		}
 		return object.Nil, nil, true
@@ -460,7 +470,7 @@ func boolDispatch(interp *Interpreter, recv *object.Object, sel string, args []*
 				blk = args[1]
 			}
 			if blk.Kind == object.KindBlock {
-				res, err := interp.CallBlock(blk, nil)
+				res, err := cb(blk, nil)
 				return res, err, true
 			}
 		}
@@ -472,7 +482,7 @@ func boolDispatch(interp *Interpreter, recv *object.Object, sel string, args []*
 				blk = args[0]
 			}
 			if blk.Kind == object.KindBlock {
-				res, err := interp.CallBlock(blk, nil)
+				res, err := cb(blk, nil)
 				return res, err, true
 			}
 		}
@@ -507,7 +517,7 @@ func boolDispatch(interp *Interpreter, recv *object.Object, sel string, args []*
 
 // --- strings ----------------------------------------------------------------
 
-func stringDispatch(interp *Interpreter, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
+func stringDispatch(cb BlockCaller, recv *object.Object, sel string, args []*object.Object, p ast.Pos) (*object.Object, error, bool) {
 	s := recv.SVal
 	switch sel {
 	case "size":
