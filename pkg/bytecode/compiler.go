@@ -299,6 +299,9 @@ func (c *Compiler) compileBlock(n *ast.Block) error {
 		}
 	}
 
+	// Copy any blocks compiled in nested scopes back to parent
+	c.blocks = blockCompiler.blocks
+
 	// If empty body, push nil
 	if len(n.Body) == 0 {
 		blockCompiler.emitOp(OpPushNil, n.Pos.Line)

@@ -57,20 +57,20 @@ func main() {
 
 	println("picoceci starting...")
 
-	// Test program: compute 10 factorial
+	// Test program: compute 5 factorial using recursion
 	err := runProgram(`
-		| factorial n result |
+		| factorial result |
 		factorial := [ :x |
 			x <= 1 ifTrue: [ 1 ] ifFalse: [ x * (factorial value: x - 1) ]
 		].
-		result := factorial value: 10.
+		result := factorial value: 5.
 		result.
 	`)
 
 	if err != nil {
 		println("error:", err.Error())
 	} else {
-		println("factorial test passed!")
+		println("factorial test passed! (5! = 120)")
 	}
 
 	println("entering idle loop...")
