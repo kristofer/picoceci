@@ -1,0 +1,28 @@
+" Counter module - a simple stateful counter object "
+
+object Counter {
+	| count |
+
+	initialize [
+		count := 0.
+	]
+
+	increment [
+		count := count + 1.
+		^ self
+	]
+
+	decrement [
+		count := count - 1.
+		^ self
+	]
+
+	value [
+		^ count
+	]
+
+	reset [
+		count := 0.
+		^ self
+	]
+}

@@ -62,6 +62,14 @@ func (vm *VM) SetBlocks(blocks []*CompiledBlock) {
 	vm.blocks = blocks
 }
 
+// AddGlobals merges additional globals into the VM's global namespace.
+// This is used for adding globals from imported modules.
+func (vm *VM) AddGlobals(globals map[string]*object.Object) {
+	for name, obj := range globals {
+		vm.globals[name] = obj
+	}
+}
+
 // Run executes the given chunk and returns the result.
 func (vm *VM) Run(chunk *Chunk) (*object.Object, error) {
 	// Create a main closure

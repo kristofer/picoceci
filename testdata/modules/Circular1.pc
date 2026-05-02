@@ -1,0 +1,5 @@
+" Circular1 - imports Circular2 to test circular import detection "
+import 'Circular2'.
+
+| x |
+x := 1.

@@ -1,0 +1,17 @@
+" Math module - mathematical utility functions "
+
+| Math |
+
+Math := [
+	| factorial fibonacci |
+
+	factorial := [ :n |
+		n <= 1 ifTrue: [ 1 ] ifFalse: [ n * (factorial value: n - 1) ]
+	].
+
+	fibonacci := [ :n |
+		n <= 1 ifTrue: [ n ] ifFalse: [
+			(fibonacci value: n - 1) + (fibonacci value: n - 2)
+		]
+	].
+].

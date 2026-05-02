@@ -117,10 +117,18 @@ func (e *Env) Define(name string) {
 }
 
 
+// EvalModuleLoader is an interface for loading modules in the interpreter.
+// It is implemented by module.Loader to break the import cycle.
+type EvalModuleLoader interface {
+	// LoadForEval loads a module and returns its globals.
+	LoadForEval(importPath string) (globals map[string]*object.Object, err error)
+}
+
 // Interpreter holds the interpreter state.
 type Interpreter struct {
 	globals         *Env
 	objectTemplates map[string]*ast.ObjectDecl // AST templates for compose support
+	moduleLoader    EvalModuleLoader           // optional module loader
 }
 
 // New creates a new Interpreter with built-in objects registered.
@@ -130,6 +138,13 @@ func New() *Interpreter {
 		objectTemplates: make(map[string]*ast.ObjectDecl),
 	}
 	registerBuiltins(interp.globals)
+	return interp
+}
+
+// NewWithLoader creates an Interpreter with a module loader for handling imports.
+func NewWithLoader(loader EvalModuleLoader) *Interpreter {
+	interp := New()
+	interp.moduleLoader = loader
 	return interp
 }
 
@@ -363,11 +378,35 @@ func (interp *Interpreter) evalNode(n ast.Node, env *Env) (*object.Object, error
 		// Interface declarations are recorded for runtime checking (future).
 		return object.Nil, nil
 	case *ast.ImportDecl:
-		// Module loading — Phase 4.
-		return object.Nil, nil
+		return interp.evalImport(node, env)
 	default:
 		return nil, fmt.Errorf("eval: unhandled node type %T", n)
 	}
+}
+
+// evalImport handles import declarations by loading the module
+// and merging its globals into the current environment.
+func (interp *Interpreter) evalImport(n *ast.ImportDecl, env *Env) (*object.Object, error) {
+	if interp.moduleLoader == nil {
+		// No module loader configured - imports are no-ops
+		return object.Nil, nil
+	}
+
+	globals, err := interp.moduleLoader.LoadForEval(n.Path)
+	if err != nil {
+		return nil, &Error{
+			Kind:    "IOError",
+			Message: fmt.Sprintf("import %q: %v", n.Path, err),
+			Pos:     n.Pos,
+		}
+	}
+
+	// Merge globals into the current environment
+	for name, obj := range globals {
+		env.Set(name, obj)
+	}
+
+	return object.Nil, nil
 }
 
 func (interp *Interpreter) evalStatements(nodes []ast.Node, env *Env) (*object.Object, error) {

@@ -9,7 +9,11 @@
 //
 // Build with:
 //
-//	tinygo build -target=esp32-coreboard-v2 ./target/esp32s3
+//	tinygo build -target=esp32s3-generic ./target/esp32s3
+//
+// Flash with:
+//
+//	tinygo flash -target=esp32s3-generic -port=/dev/cu.usbmodem11201 ./target/esp32s3
 //
 // See IMPLEMENTATION_PLAN.md Phase 5 for implementation notes.
 package main

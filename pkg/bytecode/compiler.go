@@ -8,6 +8,14 @@ import (
 	"github.com/kristofer/picoceci/pkg/object"
 )
 
+// ModuleLoader is an interface for loading modules.
+// It is implemented by module.Loader to break the import cycle.
+type ModuleLoader interface {
+	// Load loads a module by import path and returns its globals.
+	// The second return value is the compiled blocks from the module.
+	LoadModule(importPath string) (globals map[string]*object.Object, blocks []*CompiledBlock, err error)
+}
+
 // Compiler compiles AST nodes to bytecode.
 type Compiler struct {
 	chunk  *Chunk  // current chunk being compiled
@@ -15,17 +23,29 @@ type Compiler struct {
 	blocks []*CompiledBlock // compiled blocks (for closures)
 
 	// For method compilation
-	isMethod bool
+	isMethod      bool
 	selfSlotNames []string // instance variable names when compiling a method
+
+	// Module loading support
+	moduleLoader ModuleLoader                // optional module loader
+	globals      map[string]*object.Object   // accumulated globals from imports
 }
 
 // NewCompiler creates a new compiler.
 func NewCompiler() *Compiler {
 	return &Compiler{
-		chunk:  NewChunk(),
-		scope:  newScope(nil),
-		blocks: make([]*CompiledBlock, 0),
+		chunk:   NewChunk(),
+		scope:   newScope(nil),
+		blocks:  make([]*CompiledBlock, 0),
+		globals: make(map[string]*object.Object),
 	}
+}
+
+// NewCompilerWithLoader creates a compiler with a module loader for handling imports.
+func NewCompilerWithLoader(loader ModuleLoader) *Compiler {
+	c := NewCompiler()
+	c.moduleLoader = loader
+	return c
 }
 
 // Compile compiles a program (list of statements) into a Chunk.
@@ -115,8 +135,7 @@ func (c *Compiler) compileNode(node ast.Node) error {
 		// Interface declarations are recorded for type checking
 		return nil
 	case *ast.ImportDecl:
-		// Import declarations handled in module loader
-		return nil
+		return c.compileImport(n)
 	case *ast.AnonObjectLit:
 		return c.compileAnonObject(n)
 	default:
@@ -644,6 +663,35 @@ func (c *Compiler) CompileMethod(method *ast.MethodDef, slotNames []string) (*Co
 // GetBlocks returns all compiled blocks (for closure creation).
 func (c *Compiler) GetBlocks() []*CompiledBlock {
 	return c.blocks
+}
+
+// GetGlobals returns globals accumulated from import declarations.
+func (c *Compiler) GetGlobals() map[string]*object.Object {
+	return c.globals
+}
+
+// compileImport handles import declarations by loading the module
+// and merging its globals into the compiler's global namespace.
+func (c *Compiler) compileImport(n *ast.ImportDecl) error {
+	if c.moduleLoader == nil {
+		// No module loader configured - imports are no-ops
+		return nil
+	}
+
+	globals, blocks, err := c.moduleLoader.LoadModule(n.Path)
+	if err != nil {
+		return fmt.Errorf("import %q: %v", n.Path, err)
+	}
+
+	// Merge globals from the imported module
+	for name, obj := range globals {
+		c.globals[name] = obj
+	}
+
+	// Merge blocks from the imported module
+	c.blocks = append(c.blocks, blocks...)
+
+	return nil
 }
 
 // Helper methods
