@@ -35,9 +35,14 @@ func main() {
 	// Wait for USB CDC to initialize before printing
 	time.Sleep(2 * time.Second)
 
+	// Debug: use println directly to test basic serial output
+	println("=== picoceci booting ===")
+
 	// Initialize console
 	console := tinygo.NewConsole()
+	println("console initialized")
 	write(console, "picoceci starting...\n")
+	time.Sleep(1 * time.Second)
 
 	// Try to mount SD card
 	if err := sdcard.Mount("/sdcard/"); err != nil {
