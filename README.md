@@ -86,6 +86,33 @@ tinygo flash -target=esp32s3-generic -port=/dev/cu.usbmodem11201 ./target/esp32s
 
 to load and run.
 
+## Sat May 2: Work notes
+
+Summary of Today's Work
+Created picoceci as a [Canal](https://github.com/kristofer/Canal.git) domain:
+
+File Purpose
+Canal/canal/domains/picoceci/main.go Domain entry, REPL loop
+Canal/canal/domains/picoceci/console.go Serial I/O with proper echo/newline handling
+Canal/canal/domains/picoceci/filesystem.go FS stub for future capability wiring
+Canal/canal/go.mod Added picoceci dependency
+Canal/canal/Makefile Added picoceci, picoceci-flash, picoceci-run targets
+Build commands:
+
+cd /Users/kryounger/LocalProjects/Canal/canal
+make picoceci-run   # Build, flash, and monitor
+What works:
+
+Arithmetic: 3 + 4. → 7
+Console output: Console println: 'hello'.
+Echo and backspace handling
+Ctrl-D exits cleanly
+Next steps (when you're ready):
+
+- Wire filesystem to Canal capabilities for module loading
+- Test memory-intensive expressions (now has access to PSRAM via Canal/ESP-IDF)
+- Add more picoceci builtins that use Canal services
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
