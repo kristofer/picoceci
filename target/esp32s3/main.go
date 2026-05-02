@@ -2,20 +2,16 @@
 
 // Command esp32s3 is the TinyGo entry point for picoceci on the ESP32-S3.
 //
-// It:
-//  1. Initialises UART0 at 115200 baud for console I/O.
-//  2. Mounts the SD card at /sdcard/ (if available).
-//  3. Starts the picoceci REPL on UART0.
-//
 // Build with:
 //
 //	tinygo build -target=esp32s3-generic ./target/esp32s3
 //
 // Flash with:
 //
-//	tinygo flash -target=esp32s3-generic -port=/dev/cu.usbmodem11201 ./target/esp32s3
+//	tinygo flash -target=esp32s3-generic -port=/dev/cu.usbmodem* ./target/esp32s3
 //
-// See IMPLEMENTATION_PLAN.md Phase 5 for implementation notes.
+// Memory-optimized for ESP32-S3 (~320KB internal SRAM).
+// For best results, build with: tinygo flash -gc=leaking ...
 package main
 
 import (
@@ -32,24 +28,18 @@ import (
 const version = "0.1.0-dev"
 
 func main() {
-	// Wait for USB CDC to initialize before printing
+	// Wait for USB CDC to initialize
 	time.Sleep(2 * time.Second)
-
-	// Debug: use println directly to test basic serial output
-	println("=== picoceci booting ===")
 
 	// Initialize console
 	console := tinygo.NewConsole()
-	println("console initialized")
-	write(console, "picoceci starting...\n")
-	time.Sleep(1 * time.Second)
+	write(console, "picoceci "+version+" (ESP32-S3)\n")
 
-	// Try to mount SD card
+	// Try to mount SD card (will fail without hardware driver)
 	if err := sdcard.Mount("/sdcard/"); err != nil {
-		write(console, "Warning: SD card not mounted ("+err.Error()+")\n")
-		write(console, "Continuing without SD card support.\n")
+		write(console, "SD card: not available\n")
 	} else {
-		write(console, "SD card mounted at /sdcard/\n")
+		write(console, "SD card: mounted\n")
 	}
 
 	// Set up module resolver
@@ -57,7 +47,6 @@ func main() {
 	if sdcard.IsMounted() {
 		resolver = module.NewResolver(sdcard.ReadFile)
 	} else {
-		// Fallback: resolver with no file access
 		resolver = module.NewResolver(func(path string) ([]byte, error) {
 			return nil, sdcard.ErrNotMounted
 		})
@@ -65,51 +54,17 @@ func main() {
 	module.RegisterBuiltins(resolver)
 	loader := module.NewLoader(resolver)
 
-	// Create VM
-	vm := bytecode.NewVM()
-
-	// Run quick self-test
-	write(console, "Running self-test...\n")
-	if err := selfTest(); err != nil {
-		write(console, "Self-test FAILED: "+err.Error()+"\n")
-	} else {
-		write(console, "Self-test passed!\n")
-	}
+	write(console, "Ready.\n\n")
 
 	// Start REPL
-	runREPL(console, vm, loader)
-}
-
-// selfTest runs a quick bytecode VM test.
-func selfTest() error {
-	src := `| factorial | factorial := [ :x | x <= 1 ifTrue: [ 1 ] ifFalse: [ x * (factorial value: x - 1) ] ]. factorial value: 5.`
-
-	l := lexer.NewString(src)
-	p := parser.New(l)
-	prog, err := p.ParseProgram()
-	if err != nil {
-		return err
-	}
-
-	c := bytecode.NewCompiler()
-	chunk, err := c.Compile(prog.Statements)
-	if err != nil {
-		return err
-	}
-
-	vm := bytecode.NewVM()
-	vm.SetBlocks(c.GetBlocks())
-	_, err = vm.Run(chunk)
-	return err
+	runREPL(console, loader)
 }
 
 // runREPL runs the interactive REPL.
-func runREPL(console tinygo.Console, vm *bytecode.VM, loader *module.Loader) {
-	write(console, "\npicoceci "+version+" (TinyGo/ESP32-S3)\n")
-	write(console, "Type picoceci expressions. Use Ctrl-C to exit.\n\n")
-
+// Uses fresh VM per expression to minimize memory accumulation.
+func runREPL(console tinygo.Console, loader *module.Loader) {
 	for {
-		write(console, "picoceci> ")
+		write(console, "> ")
 		line, err := console.ReadLine()
 		if err != nil {
 			write(console, "\nGoodbye!\n")
@@ -124,7 +79,7 @@ func runREPL(console tinygo.Console, vm *bytecode.VM, loader *module.Loader) {
 		p := parser.New(l)
 		prog, err := p.ParseProgram()
 		if err != nil {
-			write(console, "parse error: "+err.Error()+"\n")
+			write(console, "parse: "+err.Error()+"\n")
 			continue
 		}
 
@@ -132,11 +87,12 @@ func runREPL(console tinygo.Console, vm *bytecode.VM, loader *module.Loader) {
 		c := bytecode.NewCompilerWithLoader(loader)
 		chunk, err := c.Compile(prog.Statements)
 		if err != nil {
-			write(console, "compile error: "+err.Error()+"\n")
+			write(console, "compile: "+err.Error()+"\n")
 			continue
 		}
 
-		// Run
+		// Run with fresh VM each time
+		vm := bytecode.NewVM()
 		vm.SetBlocks(c.GetBlocks())
 		vm.AddGlobals(c.GetGlobals())
 		result, err := vm.Run(chunk)

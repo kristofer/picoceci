@@ -1,0 +1,12 @@
+{
+	"inherits": ["esp32s3-generic"],
+	"build-tags": ["esp32s3_n16r8", "esp32s3_psram"],
+	"default-stack-size": 8192,
+	"linkerscript": "targets/esp32s3-psram.ld",
+	"ldflags": [
+		"-T", "targets/esp32s3-psram.ld"
+	],
+	"extra-files": [
+		"targets/psram_init.c"
+	]
+}
