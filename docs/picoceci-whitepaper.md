@@ -528,13 +528,13 @@ picoceci is in active development. Here is where things stand:
 | Language specification | ✅ Complete | Full EBNF grammar, type system, concurrency model |
 | Lexer & Parser | ✅ Complete | Handles all language constructs |
 | Tree-walking interpreter | ✅ Complete | Runs picoceci programs on desktop (Go host) |
-| Bytecode compiler & VM | 🚧 In progress | For better MCU performance |
-| TinyGo / ESP32-S3 target | 🚧 In progress | Interpreter embedded in TinyGo binary |
-| Canal integration | 📋 Planned | Capability-kernel IPC bridge |
-| Standard library | 🚧 In progress | GPIO, I²C, SPI, UART, network |
-| Developer tooling | 📋 Planned | Debugger, profiler, VS Code extension |
+| Bytecode compiler & VM | ✅ Complete | For better MCU performance |
+| TinyGo / ESP32-S3 target | ✅ Complete | Interpreter embedded in TinyGo binary |
+| Canal integration | ✅ Complete | Capability-kernel IPC bridge |
+| Standard library | ✅ Complete | GPIO, I²C, SPI, UART, network |
+| Developer tooling | 🚧 In progress | Debugger, profiler, VS Code extension |
 
-The desktop interpreter already runs, which means you can begin learning and experimenting with picoceci today on any machine that runs Go. The MCU target follows once the bytecode VM is stable.
+The desktop interpreter already runs, which means you can begin learning and experimenting with picoceci today on any machine that runs Go. The MCU target is the ESP32-S3 and the bytecode VM is stable.
 
 ---
 
@@ -580,7 +580,7 @@ For the full language reference, see [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md). Fo
 
 I want to close the way I opened: with a dream.
 
-I dream of a spacecraft — a real one — where the air quality in every corridor is monitored by a small, inexpensive device the size of a matchbox, running a picoceci program written by a student who had never touched embedded systems before the semester started. Where that device talks to seventeen others like it, and together they build a picture of the ship's environmental health that is richer and more reliable than any single centralised sensor system could provide. Where, when one of those devices fails — because things fail in space; space is *hard* — the others adapt, the network heals, and nobody dies because a single point of failure took down the whole monitoring system.
+I dream of a spacecraft — a real one — where the air quality in every corridor is monitored by a small, inexpensive device the size of a matchbox, running a picoceci program written by a student who had never touched embedded systems before the course started. Where that device talks to seventeen (hell, seventeen hundred) others like it, and together they build a picture of the ship's environmental health that is richer and more reliable than any single centralized sensor system could provide. Where, when one of those devices fails — because things fail in space; space is *hard and unforgiving* — the others adapt, the network heals, and nobody dies because a single point of failure took down the whole monitoring system.
 
 I dream of students learning to think in messages and objects and channels, and then carrying those ideas into careers in aerospace, medicine, urban infrastructure, climate monitoring — all the places where small, smart, networked devices are going to matter enormously in the decades ahead.
 
@@ -777,7 +777,7 @@ Task spawn: [
 
 No, it's not. This is just the beginning. There are so many features and patterns we haven't even touched on: timers, file I/O, network protocols, more complex data structures, debugging tools, performance optimisations, and so much more.
 
-But even more than features, there are so many applications we haven't explored: controlling actuators, implementing control loops, building distributed algorithms, integrating with cloud services, and on and on.
+But even more than features, there are so many applications we haven't explored: controlling actuators, implementing control and feedback loops, building distributed algorithms, integrating with cloud services, layering supervisory abstractions and on and on.
 
 And `picoceci` itself is just a starting point. The real magic will happen when we take the language and bend it to a different beastie, a follow-on language that isn't Smalltalk-weird, but isn't Go either. A language that can be concise, but not so strange like Hoon or Nock (see *Urbit*), but very form fitting to the commodity MCU hardware that can be produced so inexpensively and programmed with confidence when you write libraries and frameworks on top of it, when you build real systems that solve real problems.
 *And run real spacecraft.*
