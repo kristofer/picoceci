@@ -775,9 +775,11 @@ Task spawn: [
 
 ## Appendix C: But this isn't enough, Uncle Kris
 
-No, it's not. This is just the beginning. There are so many features and patterns we haven't even touched on: timers, file I/O, network protocols, more complex data structures, debugging tools, performance optimisations, and so much more.
+No, it's not. This is just the beginning. There are so many features and patterns we haven't even touched on: timers, file I/O, network protocols, more complex data structures, debugging tools, performance optimizations, and so much more.
 
 But even more than features, there are so many applications we haven't explored: controlling actuators, implementing control and feedback loops, building distributed algorithms, integrating with cloud services, layering supervisory abstractions and on and on.
+
+And what happens when we borrow some of the great ideas in **Kubernetes** and distributed systems design? What does a picoceci-based network of MCU systems look like when we start thinking in terms of microservices, service discovery, load balancing, and so on? And when we add another thousand MCUs with sensors, each running picoceci/Canal, to the network? What does the software architecture of a spacecraft look like when it is built on top of a system like this?
 
 And `picoceci` itself is just a starting point. The real magic will happen when we take the language and bend it to a different beastie, a follow-on language that isn't Smalltalk-weird, but isn't Go either. A language that can be concise, but not so strange like Hoon or Nock (see *Urbit*), but very form fitting to the commodity MCU hardware that can be produced so inexpensively and programmed with confidence when you write libraries and frameworks on top of it, when you build real systems that solve real problems.
 *And run real spacecraft.*
