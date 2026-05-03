@@ -1,7 +1,10 @@
 # picoceci: A Small Language for Big Dreams
+
 ## A Whitepaper on Message-Passing Objects for the IoT Age
 
-*Version 0.1 · May 2026*
+*Version 0.3 · May 2026*
+
+*Kristofer Younger, ZipCodeWilmington. (@kristofer on GitHub)*
 
 ---
 
@@ -9,19 +12,25 @@
 
 ---
 
-## Prologue: A Letter from Your Uncle
+## Prologue: A Letter from Your Crazy Uncle Kris
 
-Pull up a chair. I've been thinking about this for a while, and I want to tell you about a little language I've been dreaming up. It's called **picoceci**, and it's probably the most fun I've had since I first typed `print "hello"` on a machine that weighed as much as a refrigerator.
+Pull up a chair. I've been thinking about this for a while (like years), and I want to tell you about a little language I've been dreaming up. It's called **picoceci**, and it's probably the most fun I've had since I first typed `print "hello"` on a machine that weighed as much as a refrigerator. *Which was a long time ago, but in a galaxy we all know and love.*
 
-You see, for decades now I've watched two opposing forces battle it out in the software world. On one side, languages that are powerful but dense — all braces and semicolons and type declarations stacked three lines high. On the other side, languages that are friendly and readable but collapse under the weight of any real complexity. What I wanted was something in between. Something that a student could pick up in an afternoon, but that could also run — really *run* — on a microcontroller the size of a postage stamp, aboard an imagined spacecraft, managing the air you breathe.
+You see, for decades now I've watched two opposing forces battle it out in the software world. On one side, languages that are powerful but dense — all braces and semicolons and type declarations stacked three lines high. On the other side, languages that are friendly and readable but collapse under the weight of any real complexity. What I wanted was something in between. Something that a student could pick up in an afternoon, but that could also run — really *run* — on a microcontroller the size of a postage stamp, aboard an imagined spacecraft, managing the air my astronaut colleagues breathe. Oh, and it had better be reliable and resilient, because if it crashes, they die. No pressure.
 
-That language is picoceci. Let me tell you about it.
+It has to be interpretive, so it can be changed by the programmer as development proceeds. It has to be compiled into bytecodes, so it can be optimized for the MCUs that never stop. It has to use those cool ideas I've used for years — message-passing objects, composition over inheritance, channels for concurrency. It has to be small enough to fit in the tight memory constraints of an ESP32-S3, but expressive enough to write real applications. It has to be fun to write and read, because if it's not fun, students won't learn it, and then what's the point?
+
+It has to be the place where you can imagine running a spacecraft's systems with networks of tiny, smart nodes, each one a little guardian keeping an eye on the ship's vital signs. A spacecraft that doesn't have a single point of failure, but instead has a resilient mesh of many sensors and many actuators that can adapt and heal when things go wrong.
+
+That language is **picoceci**. Let me tell you about it.
 
 ---
 
 ## 1. What Is picoceci?
 
-picoceci (pronounced "pee-ko-cheh-chee" — or however you like, really) is a small, message-passing language with a big heart. It borrows Smalltalk's joyful syntax and Go's no-nonsense composability. It runs on microcontrollers via [TinyGo](https://tinygo.org/) and is designed from the ground up for distributed, networked IoT systems.
+picoceci (pronounced "pee-ko-cheh-chee" — or however you like, really) is a small, message-passing language with a big heart. It borrows Smalltalk's joyful syntax and Go's no-nonsense composability. (No inheritance hierarchies here.) It runs on microcontrollers via [TinyGo](https://tinygo.org/) and is designed from the ground up for distributed, networked IoT systems. Say something like an ESP32-S3, but the language itself is portable to any platform that can run a Go-based interpreter built using *TinyGo*.
+
+It is simpler than Smalltalk, more approachable than Go, and more powerful than either when it comes to writing resilient embedded software. It is not a general-purpose language for building web apps or data pipelines. (We have plenty of those.) It is a language for exploring, learning, playing and building the software that runs on the tiny devices that will monitor and control the physical world — especially in environments where reliability and fault tolerance are paramount.
 
 The name is a nod to *pico* (small, in the spirit of microcontrollers) and *ceci* (Italian for chickpea — small, high-protein, full of goodness). Like a chickpea, picoceci is small, but it packs a punch.
 
@@ -35,6 +44,7 @@ The name is a nod to *pico* (small, in the spirit of microcontrollers) and *ceci
 | **Interfaces, not types** | Any object that responds to the right messages satisfies an interface |
 | **Small footprint** | The whole runtime fits in under 128 KB of RAM on an ESP32-S3 |
 | **Concurrent by nature** | Tasks, queues, semaphores, and channels are first-class citizens |
+| **Runs on Canal** | The language runs on the Canal runtime, designed for embedded systems |
 
 ---
 
@@ -45,6 +55,8 @@ Here is the dream that drives this whole project. Imagine a spacecraft — a rea
 Each node runs a small picoceci program — a *Task*, in our parlance. Each Task is simple, focused, easy to understand and easy to replace if it fails. The nodes talk to each other over a network, passing messages, sharing data, raising alerts. If one fails, the others adapt. The ship doesn't have a single brain that can break; it has a resilient, self-healing mesh of small, smart, dedicated sensors and actuators.
 
 This is not science fiction. The technology exists today. What has been missing is a language expressive enough to make programming these devices *enjoyable* — enjoyable enough that students will learn it, experiment with it, break things with it, and ultimately build something wonderful with it.
+
+If we cannot build the future, how will we ever get there? I don't know about y'all, but I want to help build that future. I want to write code that runs on real hardware, code that does real things, code that could one day be part of a real spacecraft's nervous system. And I want to teach people to do the same.
 
 picoceci is meant to be that language.
 
@@ -68,7 +80,9 @@ temp := cabin temperatureSensor reading.
 Console println: 'Cabin temp: ', temp printString, ' C'.
 ```
 
-That's it. No semicolons at the end of every line (the `.` is optional in many places). No curly braces wrapping everything. No type declarations cluttering the page. It reads almost like English — or at least like a polite telegram.
+That's it. No semicolons at the end of every line (the `.` is optional in many places). No curly braces wrapping everything. No type declarations cluttering the page. No indents that, if wrong, could break the code.
+
+It reads almost like English — or at least like a polite telegram. (*Gee, Uncle Kris, you sure are old-fashioned. What's a telegram?*) The syntax is designed to be as unobtrusive as possible, so that the code itself — the messages being sent, the objects being manipulated — is what stands out.
 
 The three types of message in picoceci follow Smalltalk's elegant hierarchy:
 
@@ -77,6 +91,8 @@ The three types of message in picoceci follow Smalltalk's elegant hierarchy:
 - **Keyword messages** — `Queue new: 10`, `Task spawn: [ ... ]`, `timer every: 1000 do: [ ... ]` — one or more colon-terminated keywords, each followed by an argument.
 
 This three-tier system gives you tremendous expressiveness with almost no syntactic noise. A novice can read picoceci code on their first day and have a pretty good idea of what it does. That matters enormously when you are teaching students to write resilient embedded software.
+
+*And like Smalltalk, the **picoceci** syntax fits on a post card.*
 
 ---
 
@@ -88,7 +104,7 @@ Syntax is the face of a language; semantics are its soul. Under picoceci's frien
 
 Go famously has no class inheritance. Instead, you embed one struct inside another and the outer struct automatically gets the methods of the inner one. This simple mechanism, once you understand it, renders class hierarchies almost entirely unnecessary.
 
-picoceci does the same thing, but with objects and the `compose` keyword:
+picoceci does the same thing, but with objects (instead of `structs`) and the `compose` keyword:
 
 ```picoceci
 object Sensor {
@@ -117,7 +133,9 @@ object AlertingSensor {
 }
 ```
 
-`AlertingSensor` *is* a `Sensor` — it has all the same methods — but it adds alerting behaviour without any of the machinery of inheritance. There is no class hierarchy to navigate, no method resolution order to memorise, no fragile base class problem. The `compose` keyword copies slots and methods cleanly, like Go embedding.
+`AlertingSensor` *is* a `Sensor` — it has all the same methods — but it adds alerting behaviour without any of the machinery of inheritance.
+There is no class hierarchy to navigate, no method resolution order to memorise, no fragile base class problem.
+The `compose` keyword copies slots and methods cleanly, like Go embedding.
 
 ### Interfaces
 
@@ -159,13 +177,16 @@ Task spawn: [
 ] name: 'temp-monitor'.
 ```
 
-Channels decouple producers from consumers. Each Task does one thing well, communicates only through well-defined channels, and can be tested, replaced, or restarted without affecting the rest of the system. That is exactly what you want in a fault-tolerant network of spacecraft MCUs.
+Channels decouple producers from consumers.
+Each Task does one thing well, communicates only through well-defined channels, and can be tested, replaced, or restarted without affecting the rest of the system.
+That is exactly what you want in a fault-tolerant network of spacecraft MCUs.
 
 ---
 
 ## 5. Objects All the Way Down
 
-One of Smalltalk's most powerful ideas — and one that picoceci fully embraces — is that *everything* is an object. Not "almost everything" with a few primitive exceptions. *Everything*.
+One of Smalltalk's most powerful ideas — and one that picoceci fully embraces — is that *everything* is an object.
+Not "almost everything" with a few primitive exceptions. *Everything*.
 
 The number `42`? It's an object. Send it messages:
 
@@ -192,7 +213,10 @@ sensor sensorOK
     ifFalse: [ Console println: 'Sensor fault — check connections' ].
 ```
 
-This uniformity is not just aesthetic. It means that the mental model you need to reason about picoceci code is simple and consistent: *objects receive messages and return objects*. No special cases. No syntax for "this is a primitive operation and that is a method call." One rule, applied everywhere.
+This uniformity is not just aesthetic.
+It means that the mental model you need to reason about picoceci code is simple and consistent: *objects receive messages and return objects*.
+No special cases.
+No syntax for "this is a primitive operation and that is a method call." One rule, applied everywhere.
 
 ---
 
@@ -749,4 +773,15 @@ Task spawn: [
 
 ---
 
-*picoceci is MIT licensed. Contributions welcome at https://github.com/kristofer/picoceci*
+## Appendix C: But this isn't enough, Uncle Kris
+
+No, it's not. This is just the beginning. There are so many features and patterns we haven't even touched on: timers, file I/O, network protocols, more complex data structures, debugging tools, performance optimisations, and so much more.
+
+But even more than features, there are so many applications we haven't explored: controlling actuators, implementing control loops, building distributed algorithms, integrating with cloud services, and on and on.
+
+And `picoceci` itself is just a starting point. The real magic will happen when we take the language and bend it to a different beastie, a follow-on language that isn't Smalltalk-weird, but isn't Go either. A language that can be concise, but not so strange like Hoon or Nock (see *Urbit*), but very form fitting to the commodity MCU hardware that can be produced so inexpensively and programmed with confidence when you write libraries and frameworks on top of it, when you build real systems that solve real problems.
+*And run real spacecraft.*
+
+A language expressed so humans can read it, but AI agents can also understand it and generate it. A language that is the basis for a whole ecosystem of tools, libraries, and applications that run on the tiny devices that will monitor and control the physical world in the decades to come.
+
+*picoceci is MIT licensed. Contributions welcome at <https://github.com/kristofer/picoceci>*
