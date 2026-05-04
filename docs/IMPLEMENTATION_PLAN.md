@@ -468,7 +468,7 @@ func main() {
 Canal represents every kernel resource as a capability (an unforgeable token).  picoceci wraps capabilities as opaque objects.  The picoceci runtime holds a `CapabilityTable` that maps symbolic names to Canal capability IDs.
 
 ```picoceci
-| cap |
+| cap: Any |
 cap := Canal capability: #uart0.
 cap send: 'hello' asBytes.
 ```

@@ -1,5 +1,5 @@
 "Bubble Sort — sorts an array of integers in ascending order"
-| arr n swapped |
+| arr: Array  n: Int  swapped: Bool |
 arr := Array new: 6.
 arr at: 1 put: 64.
 arr at: 2 put: 34.
@@ -11,7 +11,7 @@ n := arr size.
 [ swapped := false.
   1 to: n - 1 do: [ :i |
       ((arr at: i) > (arr at: i + 1))
-          ifTrue: [ | t |
+          ifTrue: [ | t: Any |
               t := arr at: i.
               arr at: i put: (arr at: i + 1).
               arr at: i + 1 put: t.

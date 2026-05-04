@@ -1,5 +1,5 @@
 "Fibonacci using a block"
-| fib |
+| fib: Any |
 fib := [ :n |
     (n <= 1)
         ifTrue:  [ n ]

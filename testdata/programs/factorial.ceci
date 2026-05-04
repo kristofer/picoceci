@@ -1,5 +1,5 @@
 "Factorial — recursive using a recursive block"
-| fact |
+| fact: Any |
 fact := [ :n |
     (n <= 1)
         ifTrue:  [ 1 ]

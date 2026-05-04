@@ -119,13 +119,28 @@ func TestParser_Assignment(t *testing.T) {
 }
 
 func TestParser_VarDecl(t *testing.T) {
-	prog := parse(t, "| x y z |")
+	prog := parse(t, "| x: Int  y: Float  z: Any |")
 	vd, ok := prog.Statements[0].(*ast.VarDecl)
 	if !ok {
 		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
 	}
 	if len(vd.Names) != 3 {
 		t.Errorf("names: got %v, want [x y z]", vd.Names)
+	}
+	if len(vd.Types) != 3 {
+		t.Errorf("types: got %v, want [Int Float Any]", vd.Types)
+	}
+	if vd.Types[0] != "Int" || vd.Types[1] != "Float" || vd.Types[2] != "Any" {
+		t.Errorf("types: got %v, want [Int Float Any]", vd.Types)
+	}
+}
+
+func TestParser_VarDecl_BareIdentifierError(t *testing.T) {
+	l := lexer.NewString("| x |")
+	p := parser.New(l)
+	_, err := p.ParseProgram()
+	if err == nil {
+		t.Error("expected parse error for bare identifier in var-decl, got nil")
 	}
 }
 
@@ -165,7 +180,7 @@ func TestParser_Cascade(t *testing.T) {
 func TestParser_ObjectDecl(t *testing.T) {
 	src := `
 object Counter {
-    | count |
+    | count: Int |
     init [ count := 0 ]
     inc  [ count := count + 1. ^self ]
     value [ ^count ]
@@ -183,6 +198,9 @@ object Counter {
 	}
 	if len(decl.Slots) != 1 || decl.Slots[0] != "count" {
 		t.Errorf("slots: got %v, want [count]", decl.Slots)
+	}
+	if len(decl.SlotTypes) != 1 || decl.SlotTypes[0] != "Int" {
+		t.Errorf("slot types: got %v, want [Int]", decl.SlotTypes)
 	}
 	if len(decl.Methods) != 3 {
 		t.Errorf("methods: got %d, want 3", len(decl.Methods))
@@ -323,7 +341,7 @@ func TestParser_LanguageSpec_Examples(t *testing.T) {
 		{"binary message", "3 + 4."},
 		{"keyword message one arg", "collection at: 2."},
 		{"keyword message two args", "dict at: #key put: value."},
-		{"assignment", "| x y |\nx := 42.\ny := x + 1."},
+		{"assignment", "| x: Any  y: Any |\nx := 42.\ny := x + 1."},
 		{"cascade", "Transcript\n    print: 'a';\n    print: 'b';\n    nl."},
 		{"return", "^value."},
 		{"self", "self."},
@@ -333,14 +351,14 @@ func TestParser_LanguageSpec_Examples(t *testing.T) {
 		// §5.1 Object declaration
 		{"object Counter", `
 object Counter {
-    | count |
+    | count: Int |
     init [ count := 0 ]
     inc  [ count := count + 1. ^self ]
     dec  [ count := count - 1. ^self ]
     value [ ^count ]
     printString [ ^'Counter(', count printString, ')' ]
 }`},
-		{"object creating instances", "| c |\nc := Counter new."},
+		{"object creating instances", "| c: Counter |\nc := Counter new."},
 		{"object composition", `
 object LoggedCounter {
     compose Counter.
@@ -350,7 +368,7 @@ object LoggedCounter {
         ^self
     ]
 }`},
-		{"anonymous object literal", "| point |\npoint := object { x := 3. y := 4 }."},
+		{"anonymous object literal", "| point: Any |\npoint := object { x := 3. y := 4 }."},
 		// §6 Interfaces
 		{"interface", `
 interface Incrementable {
@@ -366,11 +384,11 @@ interface Incrementable {
 		{"whileFalse:", "[ x < 0 ] whileFalse: [ x := x + 1 ]."},
 		{"timesRepeat:", "5 timesRepeat: [ Console println: 'tick' ]."},
 		{"do:", "#(1 2 3) do: [ :each | Console println: each printString ]."},
-		{"collect:", "| doubled |\ndoubled := #(1 2 3) collect: [ :each | each * 2 ]."},
-		{"inject:into:", "| sum |\nsum := #(1 2 3) inject: 0 into: [ :acc :each | acc + each ]."},
+		{"collect:", "| doubled: Array |\ndoubled := #(1 2 3) collect: [ :each | each * 2 ]."},
+		{"inject:into:", "| sum: Int |\nsum := #(1 2 3) inject: 0 into: [ :acc :each | acc + each ]."},
 		// §8 Blocks
 		{"block two params", "[ :x :y | x + y ]."},
-		{"block closure", "| adder |\nadder := [ :n | [ :x | x + n ] ].\n(adder value: 5) value: 3."},
+		{"block closure", "| adder: Any |\nadder := [ :n | [ :x | x + n ] ].\n(adder value: 5) value: 3."},
 		// §9 Error handling
 		{"on:do:", "[ someRiskyOperation ]\n    on: Error\n    do: [ :err | Console println: err messageText ]."},
 		{"ensure:", "[ file read ]\n    ensure: [ file close ]."},
@@ -429,4 +447,123 @@ func TestParser_ThisContext(t *testing.T) {
 	if _, ok := prog.Statements[0].(*ast.ThisContextExpr); !ok {
 		t.Fatalf("expected *ast.ThisContextExpr, got %T", prog.Statements[0])
 	}
+}
+
+// --- typed variable tests ---------------------------------------------------
+
+func TestParser_TypedVarDecl_Single(t *testing.T) {
+prog := parse(t, "| x: Int |")
+vd, ok := prog.Statements[0].(*ast.VarDecl)
+if !ok {
+t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+}
+if len(vd.Names) != 1 || vd.Names[0] != "x" {
+t.Errorf("names: got %v, want [x]", vd.Names)
+}
+if len(vd.Types) != 1 || vd.Types[0] != "Int" {
+t.Errorf("types: got %v, want [Int]", vd.Types)
+}
+}
+
+func TestParser_TypedVarDecl_Multiple(t *testing.T) {
+prog := parse(t, "| x: Float  y: Bool  z: String |")
+vd, ok := prog.Statements[0].(*ast.VarDecl)
+if !ok {
+t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+}
+if len(vd.Names) != 3 {
+t.Fatalf("names: got %d, want 3", len(vd.Names))
+}
+wantTypes := []string{"Float", "Bool", "String"}
+for i, wt := range wantTypes {
+if vd.Types[i] != wt {
+t.Errorf("types[%d]: got %q, want %q", i, vd.Types[i], wt)
+}
+}
+}
+
+func TestParser_TypedVarDecl_AnyType(t *testing.T) {
+prog := parse(t, "| x: Any |")
+vd, ok := prog.Statements[0].(*ast.VarDecl)
+if !ok {
+t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+}
+if len(vd.Types) != 1 || vd.Types[0] != "Any" {
+t.Errorf("types: got %v, want [Any]", vd.Types)
+}
+}
+
+func TestParser_TypedVarDecl_UserType(t *testing.T) {
+prog := parse(t, "| c: Counter |")
+vd, ok := prog.Statements[0].(*ast.VarDecl)
+if !ok {
+t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+}
+if len(vd.Types) != 1 || vd.Types[0] != "Counter" {
+t.Errorf("types: got %v, want [Counter]", vd.Types)
+}
+}
+
+func TestParser_TypedObjectSlots(t *testing.T) {
+src := `
+object TempSensor {
+    | bus: Any  address: Int  lastC: Float |
+    reading [ ^lastC ]
+}`
+prog := parse(t, src)
+decl, ok := prog.Statements[0].(*ast.ObjectDecl)
+if !ok {
+t.Fatalf("expected *ast.ObjectDecl, got %T", prog.Statements[0])
+}
+wantSlots := []string{"bus", "address", "lastC"}
+wantTypes := []string{"Any", "Int", "Float"}
+if len(decl.Slots) != 3 {
+t.Fatalf("slots: got %d, want 3", len(decl.Slots))
+}
+for i := range wantSlots {
+if decl.Slots[i] != wantSlots[i] {
+t.Errorf("slot[%d]: got %q, want %q", i, decl.Slots[i], wantSlots[i])
+}
+if decl.SlotTypes[i] != wantTypes[i] {
+t.Errorf("slot type[%d]: got %q, want %q", i, decl.SlotTypes[i], wantTypes[i])
+}
+}
+}
+
+func TestParser_TypedMethodLocals(t *testing.T) {
+src := `
+object Foo {
+    | x: Int |
+    compute [ | result: Int | result := x + 1. ^result ]
+}`
+prog := parse(t, src)
+decl, ok := prog.Statements[0].(*ast.ObjectDecl)
+if !ok {
+t.Fatalf("expected *ast.ObjectDecl, got %T", prog.Statements[0])
+}
+if len(decl.Methods) != 1 {
+t.Fatalf("expected 1 method, got %d", len(decl.Methods))
+}
+m := decl.Methods[0]
+if len(m.Locals) != 1 || m.Locals[0] != "result" {
+t.Errorf("locals: got %v, want [result]", m.Locals)
+}
+if len(m.LocalTypes) != 1 || m.LocalTypes[0] != "Int" {
+t.Errorf("local types: got %v, want [Int]", m.LocalTypes)
+}
+}
+
+func TestParser_TypedBlockLocals(t *testing.T) {
+src := "[ | x: Float | x + 1.0 ]."
+prog := parse(t, src)
+blk, ok := prog.Statements[0].(*ast.Block)
+if !ok {
+t.Fatalf("expected *ast.Block, got %T", prog.Statements[0])
+}
+if len(blk.Locals) != 1 || blk.Locals[0] != "x" {
+t.Errorf("locals: got %v, want [x]", blk.Locals)
+}
+if len(blk.LocalTypes) != 1 || blk.LocalTypes[0] != "Float" {
+t.Errorf("local types: got %v, want [Float]", blk.LocalTypes)
+}
 }

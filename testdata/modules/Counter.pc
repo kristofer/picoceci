@@ -1,7 +1,7 @@
 " Counter module - a simple stateful counter object "
 
 object Counter {
-	| count |
+	| count: Int |
 
 	initialize [
 		count := 0.

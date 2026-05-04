@@ -1,5 +1,5 @@
 " Circular2 - imports Circular1 to test circular import detection "
 import 'Circular1'.
 
-| y |
+| y: Int |
 y := 2.

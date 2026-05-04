@@ -119,6 +119,7 @@ func (p *Parser) parseObjectDecl() *ast.ObjectDecl {
 		case lexer.PIPE:
 			vd := p.parseVarDecl()
 			n.Slots = append(n.Slots, vd.Names...)
+			n.SlotTypes = append(n.SlotTypes, vd.Types...)
 		default:
 			m := p.parseMethodDef()
 			if m != nil {
@@ -162,6 +163,7 @@ func (p *Parser) parseMethodDef() *ast.MethodDef {
 	if p.cur.Kind == lexer.PIPE {
 		vd := p.parseVarDecl()
 		m.Locals = vd.Names
+		m.LocalTypes = vd.Types
 	}
 	m.Body = p.parseStatements(lexer.RBRACKET)
 	p.expect(lexer.RBRACKET)
@@ -230,9 +232,29 @@ func (p *Parser) parseReturn() *ast.Return {
 func (p *Parser) parseVarDecl() *ast.VarDecl {
 	n := &ast.VarDecl{Pos: pos(p.cur)}
 	p.expect(lexer.PIPE)
-	for p.cur.Kind == lexer.IDENTIFIER {
-		n.Names = append(n.Names, p.cur.Literal)
+	// v2: typed var-decl requires  name: TypeName  for each variable.
+	// The lexer emits "name:" as a KEYWORD token; the type name follows as IDENTIFIER.
+	for p.cur.Kind == lexer.KEYWORD || p.cur.Kind == lexer.IDENTIFIER {
+		if p.cur.Kind == lexer.IDENTIFIER {
+			// Bare identifier without type annotation — parse error.
+			p.errorf("missing type annotation for %q; use '%s: Any' for a dynamic variable", p.cur.Literal, p.cur.Literal)
+			p.advance()
+			continue
+		}
+		// KEYWORD token has the form "name:" — strip the trailing colon to get the variable name.
+		varName := strings.TrimSuffix(p.cur.Literal, ":")
 		p.advance()
+		// The next token is the type name (IDENTIFIER).
+		var typeName string
+		if p.cur.Kind == lexer.IDENTIFIER {
+			typeName = p.cur.Literal
+			p.advance()
+		} else {
+			p.errorf("expected type name after %q:, got %q", varName, p.cur.Literal)
+			typeName = "Any"
+		}
+		n.Names = append(n.Names, varName)
+		n.Types = append(n.Types, typeName)
 	}
 	p.expect(lexer.PIPE)
 	return n
@@ -489,6 +511,7 @@ func (p *Parser) parseBlock() *ast.Block {
 	if p.cur.Kind == lexer.PIPE {
 		vd := p.parseVarDecl()
 		n.Locals = vd.Names
+		n.LocalTypes = vd.Types
 	}
 	n.Body = p.parseStatements(lexer.RBRACKET)
 	p.expect(lexer.RBRACKET)

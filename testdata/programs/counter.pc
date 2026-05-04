@@ -1,6 +1,6 @@
 "Counter object — demonstrates object declarations and method invocation"
 object Counter {
-    | count |
+    | count: Int |
     init  [ count := 0 ]
     inc   [ count := count + 1. ^self ]
     dec   [ count := count - 1. ^self ]
@@ -8,7 +8,7 @@ object Counter {
     printString [ ^'Counter(', count printString, ')' ]
 }
 
-| c |
+| c: Counter |
 c := Counter new.
 c inc; inc; inc.
 Console println: c value printString.

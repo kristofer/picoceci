@@ -185,7 +185,7 @@ func TestVMStringSize(t *testing.T) {
 }
 
 func TestVMLocalVariable(t *testing.T) {
-	result, err := runVM("| x | x := 42. x.")
+	result, err := runVM("| x: Any | x := 42. x.")
 	if err != nil {
 		t.Fatalf("VM error: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestVMLocalVariable(t *testing.T) {
 }
 
 func TestVMMultipleLocals(t *testing.T) {
-	result, err := runVM("| x y | x := 3. y := 4. x + y.")
+	result, err := runVM("| x: Int  y: Int | x := 3. y := 4. x + y.")
 	if err != nil {
 		t.Fatalf("VM error: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestVMBlockWithArg(t *testing.T) {
 }
 
 func TestVMTimesRepeat(t *testing.T) {
-	result, err := runVM("| sum | sum := 0. 3 timesRepeat: [ sum := sum + 1 ]. sum.")
+	result, err := runVM("| sum: Int | sum := 0. 3 timesRepeat: [ sum := sum + 1 ]. sum.")
 	if err != nil {
 		t.Fatalf("VM error: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestVMTimesRepeat(t *testing.T) {
 }
 
 func TestVMToDo(t *testing.T) {
-	result, err := runVM("| sum | sum := 0. 1 to: 3 do: [ :i | sum := sum + i ]. sum.")
+	result, err := runVM("| sum: Int | sum := 0. 1 to: 3 do: [ :i | sum := sum + i ]. sum.")
 	if err != nil {
 		t.Fatalf("VM error: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestVMStringReversed(t *testing.T) {
 }
 
 func TestVMWhileTrue(t *testing.T) {
-	result, err := runVM("| x | x := 0. [ x < 3 ] whileTrue: [ x := x + 1 ]. x.")
+	result, err := runVM("| x: Int | x := 0. [ x < 3 ] whileTrue: [ x := x + 1 ]. x.")
 	if err != nil {
 		t.Fatalf("VM error: %v", err)
 	}
