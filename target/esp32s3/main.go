@@ -15,6 +15,7 @@
 package main
 
 import (
+	"strings"
 	"time"
 
 	"github.com/kristofer/picoceci/pkg/bytecode"
@@ -62,49 +63,92 @@ func main() {
 
 // runREPL runs the interactive REPL.
 // Uses fresh VM per expression to minimize memory accumulation.
+//
+// Paste mode: type "---" alone on a line to enter paste mode; all
+// subsequent lines are buffered.  Type "---" again to execute the
+// buffered program as a single unit.  This lets you paste multi-line
+// programs over the USB serial interface without triggering a parse
+// error on every incomplete line.
 func runREPL(console tinygo.Console, loader *module.Loader) {
+	var buf strings.Builder
+	inPaste := false
+
 	for {
-		write(console, "> ")
+		if inPaste {
+			write(console, "... ")
+		} else {
+			write(console, "> ")
+		}
+
 		line, err := console.ReadLine()
 		if err != nil {
 			write(console, "\nGoodbye!\n")
 			break
 		}
+
+		// "---" toggles paste mode.
+		if line == "---" {
+			if !inPaste {
+				inPaste = true
+				buf.Reset()
+				write(console, "(paste mode on: type '---' to run)\n")
+			} else {
+				inPaste = false
+				src := buf.String()
+				buf.Reset()
+				if src != "" {
+					execSource(console, src, loader)
+				}
+			}
+			continue
+		}
+
+		if inPaste {
+			buf.WriteString(line)
+			buf.WriteByte('\n')
+			continue
+		}
+
 		if line == "" {
 			continue
 		}
 
-		// Parse
-		l := lexer.NewString(line)
-		p := parser.New(l)
-		prog, err := p.ParseProgram()
-		if err != nil {
-			write(console, "parse: "+err.Error()+"\n")
-			continue
-		}
+		execSource(console, line, loader)
+	}
+}
 
-		// Compile
-		c := bytecode.NewCompilerWithLoader(loader)
-		chunk, err := c.Compile(prog.Statements)
-		if err != nil {
-			write(console, "compile: "+err.Error()+"\n")
-			continue
-		}
+// execSource parses, compiles, and runs src, writing results to console.
+func execSource(console tinygo.Console, src string, loader *module.Loader) {
+	// Parse
+	l := lexer.NewString(src)
+	p := parser.New(l)
+	prog, err := p.ParseProgram()
+	if err != nil {
+		write(console, "parse: "+err.Error()+"\n")
+		return
+	}
 
-		// Run with fresh VM each time
-		vm := bytecode.NewVM()
-		vm.SetBlocks(c.GetBlocks())
-		vm.AddGlobals(c.GetGlobals())
-		result, err := vm.Run(chunk)
-		if err != nil {
-			write(console, "error: "+err.Error()+"\n")
-			continue
-		}
+	// Compile
+	c := bytecode.NewCompilerWithLoader(loader)
+	chunk, err := c.Compile(prog.Statements)
+	if err != nil {
+		write(console, "compile: "+err.Error()+"\n")
+		return
+	}
 
-		// Print result
-		if result != nil {
-			write(console, "=> "+result.PrintString()+"\n")
-		}
+	// Run with fresh VM each time
+	vm := bytecode.NewVM()
+	vm.SetBlocks(c.GetBlocks())
+	vm.AddGlobals(c.GetGlobals())
+	result, err := vm.Run(chunk)
+	if err != nil {
+		write(console, "error: "+err.Error()+"\n")
+		return
+	}
+
+	// Print result
+	if result != nil {
+		write(console, "=> "+result.PrintString()+"\n")
 	}
 }
 

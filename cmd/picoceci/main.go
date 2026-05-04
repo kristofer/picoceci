@@ -10,8 +10,10 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/kristofer/picoceci/pkg/ast"
 	"github.com/kristofer/picoceci/pkg/eval"
@@ -124,40 +126,89 @@ func createModuleLoader() *module.Loader {
 }
 
 // runREPL starts an interactive Read-Eval-Print Loop.
+//
+// Paste mode: type "---" alone on a line to enter paste mode; all
+// subsequent lines are buffered.  Type "---" again to execute the
+// buffered program as a single unit.  This lets you paste multi-line
+// programs without triggering a parse error on every incomplete line.
 func runREPL() {
 	fmt.Printf("picoceci %s  (type Ctrl-D to exit)\n", version)
+	fmt.Println("  tip: type '---' to enter/exit paste mode for multi-line programs")
+	runREPLWithIO(os.Stdin, os.Stdout, os.Stderr)
+}
 
+// runREPLWithIO is the testable core of the REPL.
+// It reads from r, writes prompts/results to out, and errors to errOut.
+func runREPLWithIO(r io.Reader, out, errOut io.Writer) {
 	// Create interpreter with module loader for imports
 	loader := createModuleLoader()
 	interp := eval.NewWithLoader(loader)
 
-	scanner := bufio.NewScanner(os.Stdin)
+	scanner := bufio.NewScanner(r)
+	var buf strings.Builder
+	inPaste := false
+
 	for {
-		fmt.Print("picoceci> ")
+		if inPaste {
+			fmt.Fprint(out, "... ")
+		} else {
+			fmt.Fprint(out, "picoceci> ")
+		}
 		if !scanner.Scan() {
 			break
 		}
 		line := scanner.Text()
+
+		// "---" toggles paste mode.
+		if line == "---" {
+			if !inPaste {
+				inPaste = true
+				buf.Reset()
+				fmt.Fprintln(out, "(paste mode on: type '---' to run)")
+			} else {
+				inPaste = false
+				src := buf.String()
+				buf.Reset()
+				if src == "" {
+					continue
+				}
+				evalSourceWithIO(interp, src, out, errOut)
+			}
+			continue
+		}
+
+		if inPaste {
+			buf.WriteString(line)
+			buf.WriteByte('\n')
+			continue
+		}
+
 		if line == "" {
 			continue
 		}
 
-		prog, err := parseSource([]byte(line))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "parse error: %v\n", err)
-			continue
-		}
-
-		result, err := interp.Eval(prog.Statements)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			continue
-		}
-		if result != nil {
-			fmt.Println("=>", result.PrintString())
-		}
+		evalSourceWithIO(interp, line, out, errOut)
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
+}
+
+// evalSourceWithIO parses and evaluates src, writing results to out and
+// errors to errOut.
+func evalSourceWithIO(interp *eval.Interpreter, src string, out, errOut io.Writer) {
+	prog, err := parseSource([]byte(src))
+	if err != nil {
+		fmt.Fprintf(errOut, "parse error: %v\n", err)
+		return
+	}
+
+	result, err := interp.Eval(prog.Statements)
+	if err != nil {
+		fmt.Fprintf(errOut, "error: %v\n", err)
+		return
+	}
+	if result != nil {
+		fmt.Fprintln(out, "=>", result.PrintString())
+	}
 }
 
 // parseSource tokenises and parses src, returning the AST or an error.
