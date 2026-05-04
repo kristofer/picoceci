@@ -142,7 +142,7 @@ func TestCompileKeywordMessage(t *testing.T) {
 }
 
 func TestCompileVarDecl(t *testing.T) {
-	chunk, err := compileSource("| x | x := 42.")
+	chunk, err := compileSource("| x: Any | x := 42.")
 	if err != nil {
 		t.Fatalf("compile error: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestCompileVarDecl(t *testing.T) {
 }
 
 func TestCompileLocalVariable(t *testing.T) {
-	chunk, err := compileSource("| x | x := 42. x.")
+	chunk, err := compileSource("| x: Any | x := 42. x.")
 	if err != nil {
 		t.Fatalf("compile error: %v", err)
 	}

@@ -28,19 +28,20 @@ func (e *Error) Error() string {
 // When selfObj is non-nil, slot names in selfObj.Slots are visible as variables.
 type Env struct {
 	vars            map[string]*object.Object
+	types           map[string]string           // declared type for each variable in this scope
 	outer           *Env
-	selfObj         *object.Object // non-nil in method environments
+	selfObj         *object.Object              // non-nil in method environments
 	composedMethods map[string]*object.MethodDef // for super dispatch in method envs
 }
 
 // NewEnv creates a fresh top-level environment.
 func NewEnv() *Env {
-	return &Env{vars: make(map[string]*object.Object)}
+	return &Env{vars: make(map[string]*object.Object), types: make(map[string]string)}
 }
 
 // child creates a nested scope.
 func (e *Env) child() *Env {
-	return &Env{vars: make(map[string]*object.Object), outer: e}
+	return &Env{vars: make(map[string]*object.Object), types: make(map[string]string), outer: e}
 }
 
 // getComposedMethods walks the scope chain to find the nearest composedMethods table.
@@ -111,9 +112,147 @@ func (e *Env) setExisting(name string, val *object.Object) bool {
 	return false
 }
 
-// Define declares a new variable in the current (not outer) scope.
+// Define declares a new variable in the current (not outer) scope without a type constraint.
+// Used internally for self, method parameters, and block parameters.
 func (e *Env) Define(name string) {
 	e.vars[name] = object.Nil
+	if e.types == nil {
+		e.types = make(map[string]string)
+	}
+	e.types[name] = "Any"
+}
+
+// DefineTyped declares a new variable in the current scope with the given type,
+// initialising it to the zero value for that type.
+func (e *Env) DefineTyped(name, typeName string) {
+	if e.types == nil {
+		e.types = make(map[string]string)
+	}
+	e.types[name] = typeName
+	e.vars[name] = zeroValueFor(typeName)
+}
+
+// lookupDeclaredType returns the declared type for name, walking the scope chain.
+// Returns "" if no type declaration is found.
+func (e *Env) lookupDeclaredType(name string) string {
+	if e == nil {
+		return ""
+	}
+	if e.types != nil {
+		if t, ok := e.types[name]; ok {
+			return t
+		}
+	}
+	// Check slot types in selfObj.
+	if e.selfObj != nil && e.selfObj.SlotTypes != nil {
+		if t, ok := e.selfObj.SlotTypes[name]; ok {
+			return t
+		}
+	}
+	return e.outer.lookupDeclaredType(name)
+}
+
+// checkAssignType validates that val is compatible with the declared type for name.
+// Returns a TypeError if the type is incompatible; returns nil for "Any" or unknown variables.
+func (e *Env) checkAssignType(name string, val *object.Object, pos ast.Pos) error {
+	typeName := e.lookupDeclaredType(name)
+	if typeName == "" || typeName == "Any" {
+		return nil
+	}
+	if !typeMatches(typeName, val) {
+		got := kindTypeName(val)
+		return &Error{
+			Kind:    "TypeError",
+			Message: fmt.Sprintf("variable %q expects %s, got %s", name, typeName, got),
+			Pos:     pos,
+		}
+	}
+	return nil
+}
+
+// zeroValueFor returns the zero value for the given type name.
+func zeroValueFor(typeName string) *object.Object {
+	switch typeName {
+	case "Int":
+		return object.IntObject(0)
+	case "Float":
+		return object.FloatObject(0.0)
+	case "Bool":
+		return object.False
+	case "String":
+		return object.StringObject("")
+	case "Char":
+		return object.CharObject(0)
+	case "Symbol":
+		return object.SymbolObject("")
+	case "ByteArray":
+		return object.ByteArrayObject(nil)
+	case "Array":
+		return object.ArrayObject(0)
+	default:
+		// Nil, Any, user-defined object/interface types — nil until assigned.
+		return object.Nil
+	}
+}
+
+// typeMatches reports whether val is compatible with the declared type name.
+func typeMatches(typeName string, val *object.Object) bool {
+	if val == nil {
+		val = object.Nil
+	}
+	switch typeName {
+	case "Int":
+		return val.Kind == object.KindSmallInt
+	case "Float":
+		return val.Kind == object.KindFloat
+	case "Bool":
+		return val.Kind == object.KindBool
+	case "String":
+		return val.Kind == object.KindString
+	case "Char":
+		return val.Kind == object.KindChar
+	case "Symbol":
+		return val.Kind == object.KindSymbol
+	case "ByteArray":
+		return val.Kind == object.KindByteArray
+	case "Array":
+		return val.Kind == object.KindArray
+	case "Nil":
+		return val.Kind == object.KindNil
+	default:
+		// User-defined object or interface type: accept any Object or Nil.
+		return val.Kind == object.KindObject || val.Kind == object.KindNil
+	}
+}
+
+// kindTypeName returns a human-readable type name for error messages.
+func kindTypeName(val *object.Object) string {
+	if val == nil || val.Kind == object.KindNil {
+		return "Nil"
+	}
+	switch val.Kind {
+	case object.KindSmallInt:
+		return "Int"
+	case object.KindFloat:
+		return "Float"
+	case object.KindBool:
+		return "Bool"
+	case object.KindString:
+		return "String"
+	case object.KindChar:
+		return "Char"
+	case object.KindSymbol:
+		return "Symbol"
+	case object.KindByteArray:
+		return "ByteArray"
+	case object.KindArray:
+		return "Array"
+	case object.KindBlock:
+		return "Block"
+	case object.KindObject:
+		return "Object"
+	}
+	return "Unknown"
 }
 
 
@@ -167,13 +306,20 @@ func (interp *Interpreter) evalNode(n ast.Node, env *Env) (*object.Object, error
 	case *ast.Program:
 		return interp.evalStatements(node.Statements, env)
 	case *ast.VarDecl:
-		for _, name := range node.Names {
-			env.Define(name)
+		for i, name := range node.Names {
+			typeName := "Any"
+			if i < len(node.Types) {
+				typeName = node.Types[i]
+			}
+			env.DefineTyped(name, typeName)
 		}
 		return object.Nil, nil
 	case *ast.Assign:
 		val, err := interp.evalNode(node.Value, env)
 		if err != nil {
+			return nil, err
+		}
+		if err := env.checkAssignType(node.Name, val, node.Pos); err != nil {
 			return nil, err
 		}
 		env.Set(node.Name, val)
@@ -259,11 +405,12 @@ func (interp *Interpreter) evalNode(n ast.Node, env *Env) (*object.Object, error
 		return inst, nil
 	case *ast.Block:
 		blk := &object.Object{
-			Kind:   object.KindBlock,
-			Params: node.Params,
-			Locals: node.Locals,
-			Body:   node.Body,
-			Env:    env,
+			Kind:       object.KindBlock,
+			Params:     node.Params,
+			Locals:     node.Locals,
+			LocalTypes: node.LocalTypes,
+			Body:       node.Body,
+			Env:        env,
 		}
 		return blk, nil
 	case *ast.UnaryMsg:
@@ -474,8 +621,12 @@ func (interp *Interpreter) applyMethod(self *object.Object, m *object.MethodDef,
 			methodEnv.vars[param] = args[i]
 		}
 	}
-	for _, local := range m.Locals {
-		methodEnv.Define(local)
+	for i, local := range m.Locals {
+		typeName := "Any"
+		if i < len(m.LocalTypes) {
+			typeName = m.LocalTypes[i]
+		}
+		methodEnv.DefineTyped(local, typeName)
 	}
 	return interp.evalStatements(body, methodEnv)
 }
@@ -497,8 +648,12 @@ func (interp *Interpreter) CallBlock(blk *object.Object, args []*object.Object) 
 			blockEnv.Set(param, args[i])
 		}
 	}
-	for _, local := range blk.Locals {
-		blockEnv.Define(local)
+	for i, local := range blk.Locals {
+		typeName := "Any"
+		if i < len(blk.LocalTypes) {
+			typeName = blk.LocalTypes[i]
+		}
+		blockEnv.DefineTyped(local, typeName)
 	}
 	return interp.evalStatements(body, blockEnv)
 }
@@ -525,11 +680,19 @@ func (interp *Interpreter) registerObjectDecl(decl *ast.ObjectDecl, env *Env) {
 
 	// Collect slots and methods from all composed objects (in declaration order).
 	allSlots := make([]string, 0)
+	allSlotTypes := make(map[string]string)
 	composedMethods := make(map[string]*object.MethodDef)
 
 	for _, composeName := range decl.Composes {
 		if composeDecl, ok := interp.objectTemplates[composeName]; ok {
 			allSlots = append(allSlots, composeDecl.Slots...)
+			for i, slot := range composeDecl.Slots {
+				if i < len(composeDecl.SlotTypes) {
+					allSlotTypes[slot] = composeDecl.SlotTypes[i]
+				} else {
+					allSlotTypes[slot] = "Any"
+				}
+			}
 		}
 		if composeFactory, ok := env.Get(composeName); ok {
 			for sel, m := range composeFactory.Methods {
@@ -537,17 +700,32 @@ func (interp *Interpreter) registerObjectDecl(decl *ast.ObjectDecl, env *Env) {
 					composedMethods[sel] = m
 				}
 			}
+			// Also inherit slot types from the composed factory.
+			if composeFactory.SlotTypes != nil {
+				for slot, typeName := range composeFactory.SlotTypes {
+					allSlotTypes[slot] = typeName
+				}
+			}
 		}
 	}
 
-	// Own slots come after composed slots.
+	// Own slots come after composed slots; own slot types override composed ones.
 	allSlots = append(allSlots, decl.Slots...)
+	for i, slot := range decl.Slots {
+		if i < len(decl.SlotTypes) {
+			allSlotTypes[slot] = decl.SlotTypes[i]
+		} else {
+			allSlotTypes[slot] = "Any"
+		}
+	}
 
 	// Build the factory's method table: composed methods first, then own
 	// methods override them.
+	capturedSlotTypes := allSlotTypes
 	factory := &object.Object{
 		Kind:            object.KindObject,
 		Slots:           make(map[string]*object.Object),
+		SlotTypes:       capturedSlotTypes,
 		Methods:         make(map[string]*object.MethodDef),
 		ComposedMethods: composedMethods,
 	}
@@ -559,26 +737,36 @@ func (interp *Interpreter) registerObjectDecl(decl *ast.ObjectDecl, env *Env) {
 	for _, mdef := range decl.Methods {
 		mdef := mdef // capture
 		factory.Methods[mdef.Selector] = &object.MethodDef{
-			Selector: mdef.Selector,
-			Params:   mdef.Params,
-			Locals:   mdef.Locals,
-			Body:     mdef.Body,
+			Selector:   mdef.Selector,
+			Params:     mdef.Params,
+			Locals:     mdef.Locals,
+			LocalTypes: mdef.LocalTypes,
+			Body:       mdef.Body,
 		}
 	}
 
 	// `new` method: create an instance and call `init` if it exists.
 	capturedSlots := allSlots
+	// capturedSlotTypes is captured from the enclosing factory building block above.
 	factory.Methods["new"] = &object.MethodDef{
 		Selector: "new",
 		Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
 			inst := &object.Object{
 				Kind:            object.KindObject,
 				Slots:           make(map[string]*object.Object),
-				Methods:         self.Methods, // share method table
+				SlotTypes:       self.SlotTypes, // share slot type table
+				Methods:         self.Methods,   // share method table
 				ComposedMethods: self.ComposedMethods,
 			}
+			// Initialise each slot to its declared zero value.
 			for _, slot := range capturedSlots {
-				inst.Slots[slot] = object.Nil
+				typeName := "Any"
+				if self.SlotTypes != nil {
+					if t, ok := self.SlotTypes[slot]; ok {
+						typeName = t
+					}
+				}
+				inst.Slots[slot] = zeroValueFor(typeName)
 			}
 			// Call init if defined.
 			if m, ok := inst.Methods["init"]; ok {

@@ -1,6 +1,6 @@
 "Super dispatch — LoggedCounter uses super to delegate to Counter's inc"
 object Counter {
-    | count |
+    | count: Int |
     init  [ count := 0 ]
     inc   [ count := count + 1. ^self ]
     value [ ^count ]
@@ -15,7 +15,7 @@ object LoggedCounter {
     ]
 }
 
-| c |
+| c: LoggedCounter |
 c := LoggedCounter new.
 c inc.
 c inc.

@@ -30,11 +30,12 @@ const (
 
 // MethodDef holds the definition of a picoceci method.
 type MethodDef struct {
-	Selector string
-	Params   []string // parameter names
-	Locals   []string // local variable names
-	Body     interface{} // []ast.Node (to avoid import cycle; cast by eval)
-	Native   func(self *Object, args []*Object) (*Object, error) // for built-ins
+	Selector   string
+	Params     []string // parameter names
+	Locals     []string // local variable names (parallel with LocalTypes)
+	LocalTypes []string // declared type for each local; "Any" = dynamic
+	Body       interface{} // []ast.Node (to avoid import cycle; cast by eval)
+	Native     func(self *Object, args []*Object) (*Object, error) // for built-ins
 }
 
 // Object is the universal value container for the picoceci runtime.
@@ -53,15 +54,17 @@ type Object struct {
 	Items   []*Object // KindArray
 
 	// Object / block storage.
-	Slots          map[string]*Object // instance variable slots
-	Methods        map[string]*MethodDef
+	Slots           map[string]*Object   // instance variable slots
+	SlotTypes       map[string]string    // declared type for each slot (factory/instance)
+	Methods         map[string]*MethodDef
 	ComposedMethods map[string]*MethodDef // composed-object methods for super dispatch
-	Env            interface{}            // *eval.Env — set by eval package (avoid import cycle)
+	Env             interface{}           // *eval.Env — set by eval package (avoid import cycle)
 
 	// Block-specific.
-	Params []string
-	Locals []string
-	Body   interface{} // []ast.Node
+	Params     []string
+	Locals     []string // local variable names (parallel with LocalTypes)
+	LocalTypes []string // declared type for each local; "Any" = dynamic
+	Body       interface{} // []ast.Node
 
 	// Reference count (used by the memory package).
 	RefCount int32

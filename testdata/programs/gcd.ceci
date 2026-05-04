@@ -1,7 +1,7 @@
 "Greatest Common Divisor — Euclidean algorithm"
-| gcd |
+| gcd: Any |
 gcd := [ :a :b |
-    [ b ~= 0 ] whileTrue: [ | t |
+    [ b ~= 0 ] whileTrue: [ | t: Int |
         t := b.
         b := a \\ b.
         a := t

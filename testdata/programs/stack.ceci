@@ -1,15 +1,15 @@
 "Stack — a simple LIFO stack implemented as an object"
 object Stack {
-    | storage top |
+    | storage: Array  top: Int |
     init    [ storage := Array new: 64. top := 0 ]
     push: v [ top := top + 1. storage at: top put: v. ^self ]
-    pop     [ | v | v := storage at: top. top := top - 1. ^v ]
+    pop     [ | v: Any | v := storage at: top. top := top - 1. ^v ]
     peek    [ ^storage at: top ]
     isEmpty [ ^top = 0 ]
     size    [ ^top ]
 }
 
-| s |
+| s: Stack |
 s := Stack new.
 s push: 10.
 s push: 20.

@@ -43,11 +43,12 @@ func (n *ImportDecl) nodeString() string { return fmt.Sprintf("Import(%q)", n.Pa
 
 // ObjectDecl represents:  object Name { ... }
 type ObjectDecl struct {
-	Pos      Pos
-	Name     string
-	Composes []string     // names of composed objects
-	Slots    []string     // instance variable names
-	Methods  []*MethodDef
+	Pos       Pos
+	Name      string
+	Composes  []string     // names of composed objects
+	Slots     []string     // instance variable names (parallel with SlotTypes)
+	SlotTypes []string     // declared type for each slot; always populated; "Any" = dynamic
+	Methods   []*MethodDef
 }
 
 func (n *ObjectDecl) nodePos() Pos    { return n.Pos }
@@ -55,11 +56,12 @@ func (n *ObjectDecl) nodeString() string { return fmt.Sprintf("Object(%s)", n.Na
 
 // MethodDef is a method inside an object declaration.
 type MethodDef struct {
-	Pos      Pos
-	Selector string   // full selector, e.g. "inc", "+", "at:put:"
-	Params   []string // parameter names (in order)
-	Locals   []string // local variable names
-	Body     []Node
+	Pos        Pos
+	Selector   string   // full selector, e.g. "inc", "+", "at:put:"
+	Params     []string // parameter names (in order)
+	Locals     []string // local variable names (parallel with LocalTypes)
+	LocalTypes []string // declared type for each local; always populated; "Any" = dynamic
+	Body       []Node
 }
 
 func (n *MethodDef) nodePos() Pos    { return n.Pos }
@@ -80,7 +82,8 @@ func (n *InterfaceDecl) nodeString() string { return fmt.Sprintf("Interface(%s)"
 // VarDecl represents:  | x y z |
 type VarDecl struct {
 	Pos   Pos
-	Names []string
+	Names []string // variable names (parallel with Types)
+	Types []string // declared type for each name; always populated; "Any" = dynamic
 }
 
 func (n *VarDecl) nodePos() Pos    { return n.Pos }
@@ -294,10 +297,11 @@ func (n *AnonObjectLit) nodeString() string { return fmt.Sprintf("AnonObject(%d 
 
 // Block represents a block closure: [ :p | body ]
 type Block struct {
-	Pos    Pos
-	Params []string
-	Locals []string
-	Body   []Node
+	Pos        Pos
+	Params     []string
+	Locals     []string // local variable names (parallel with LocalTypes)
+	LocalTypes []string // declared type for each local; always populated; "Any" = dynamic
+	Body       []Node
 }
 
 func (n *Block) nodePos() Pos    { return n.Pos }

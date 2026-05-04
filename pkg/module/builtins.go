@@ -42,7 +42,7 @@ const collectionsSource = `
 
 " OrderedCollection - a growable array-like collection "
 object OrderedCollection {
-	| items |
+	| items: Array |
 
 	initialize [
 		items := #().

@@ -8,7 +8,7 @@ import (
 func TestLoaderSimpleModule(t *testing.T) {
 	files := map[string]string{
 		"/sdcard/picoceci/libs/Math.pc": `
-| x |
+| x: Any |
 x := 42.
 `,
 	}
@@ -33,7 +33,7 @@ x := 42.
 func TestLoaderCaching(t *testing.T) {
 	loadCount := 0
 	files := map[string]string{
-		"/sdcard/picoceci/libs/Counter.pc": "| x | x := 0.",
+		"/sdcard/picoceci/libs/Counter.pc": "| x: Any | x := 0.",
 	}
 	countingReader := func(path string) ([]byte, error) {
 		loadCount++
@@ -114,7 +114,7 @@ func TestLoaderParseError(t *testing.T) {
 
 func TestLoaderBuiltinModule(t *testing.T) {
 	resolver := NewResolver(mockFileReader(nil))
-	resolver.RegisterBuiltin("core", "| x | x := true.")
+	resolver.RegisterBuiltin("core", "| x: Bool | x := true.")
 	loader := NewLoader(resolver)
 
 	mod, err := loader.Load("core")
@@ -128,8 +128,8 @@ func TestLoaderBuiltinModule(t *testing.T) {
 
 func TestLoaderNestedImport(t *testing.T) {
 	files := map[string]string{
-		"/sdcard/picoceci/libs/Main.pc":   "import 'Helper'. | x | x := 1.",
-		"/sdcard/picoceci/libs/Helper.pc": "| y | y := 2.",
+		"/sdcard/picoceci/libs/Main.pc":   "import 'Helper'. | x: Int | x := 1.",
+		"/sdcard/picoceci/libs/Helper.pc": "| y: Int | y := 2.",
 	}
 	resolver := NewResolver(mockFileReader(files))
 	loader := NewLoader(resolver)
@@ -152,7 +152,7 @@ func TestLoaderNestedImport(t *testing.T) {
 
 func TestLoaderClearCache(t *testing.T) {
 	files := map[string]string{
-		"/sdcard/picoceci/libs/Test.pc": "| x | x := 1.",
+		"/sdcard/picoceci/libs/Test.pc": "| x: Int | x := 1.",
 	}
 	resolver := NewResolver(mockFileReader(files))
 	loader := NewLoader(resolver)

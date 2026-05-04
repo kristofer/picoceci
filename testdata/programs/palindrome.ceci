@@ -1,5 +1,5 @@
 "Palindrome check — tests if a string reads the same forwards and backwards"
-| isPalindrome |
+| isPalindrome: Any |
 isPalindrome := [ :s | s = s reversed ].
 Console println: (isPalindrome value: 'racecar') printString.
 Console println: (isPalindrome value: 'hello') printString.

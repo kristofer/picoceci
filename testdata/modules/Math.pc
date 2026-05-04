@@ -1,9 +1,9 @@
 " Math module - mathematical utility functions "
 
-| Math |
+| Math: Any |
 
 Math := [
-	| factorial fibonacci |
+	| factorial: Any  fibonacci: Any |
 
 	factorial := [ :n |
 		n <= 1 ifTrue: [ 1 ] ifFalse: [ n * (factorial value: n - 1) ]
