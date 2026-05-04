@@ -13,15 +13,36 @@ import (
 	"github.com/kristofer/picoceci/pkg/parser"
 )
 
-func getTestdataPath() string {
-	// Find the testdata directory relative to the project root
-	wd, _ := os.Getwd()
-	// Go up from pkg/module to project root
-	return filepath.Join(wd, "..", "..", "testdata")
+func getTestdataPath(t *testing.T) string {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+
+	dir := wd
+	for {
+		candidate := filepath.Join(dir, "testdata")
+		if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
+			if _, modErr := os.Stat(filepath.Join(dir, "go.mod")); modErr == nil {
+				return candidate
+			}
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	t.Fatalf("could not locate repository testdata directory from %s", wd)
+	return ""
 }
 
 func TestIntegrationLoadModuleFromFile(t *testing.T) {
-	testdata := getTestdataPath()
+	testdata := getTestdataPath(t)
 	modulesPath := filepath.Join(testdata, "modules")
 
 	resolver := module.NewResolver(os.ReadFile)
@@ -41,7 +62,7 @@ func TestIntegrationLoadModuleFromFile(t *testing.T) {
 }
 
 func TestIntegrationCircularImportDetection(t *testing.T) {
-	testdata := getTestdataPath()
+	testdata := getTestdataPath(t)
 	modulesPath := filepath.Join(testdata, "modules")
 
 	resolver := module.NewResolver(os.ReadFile)
@@ -83,7 +104,7 @@ func TestIntegrationBuiltinModules(t *testing.T) {
 }
 
 func TestIntegrationBytecodeCompilerWithImport(t *testing.T) {
-	testdata := getTestdataPath()
+	testdata := getTestdataPath(t)
 	modulesPath := filepath.Join(testdata, "modules")
 
 	resolver := module.NewResolver(os.ReadFile)
@@ -113,7 +134,7 @@ func TestIntegrationBytecodeCompilerWithImport(t *testing.T) {
 }
 
 func TestIntegrationEvalInterpreterWithImport(t *testing.T) {
-	testdata := getTestdataPath()
+	testdata := getTestdataPath(t)
 	modulesPath := filepath.Join(testdata, "modules")
 
 	resolver := module.NewResolver(os.ReadFile)
@@ -139,7 +160,7 @@ func TestIntegrationEvalInterpreterWithImport(t *testing.T) {
 }
 
 func TestIntegrationModuleCaching(t *testing.T) {
-	testdata := getTestdataPath()
+	testdata := getTestdataPath(t)
 	modulesPath := filepath.Join(testdata, "modules")
 
 	loadCount := 0
@@ -171,7 +192,7 @@ func TestIntegrationModuleCaching(t *testing.T) {
 }
 
 func TestIntegrationSDCardPath(t *testing.T) {
-	testdata := getTestdataPath()
+	testdata := getTestdataPath(t)
 	sdcardPath := filepath.Join(testdata, "sdcard", "picoceci", "libs") + "/"
 
 	resolver := module.NewResolver(os.ReadFile)

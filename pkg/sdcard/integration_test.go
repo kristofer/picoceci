@@ -3,15 +3,45 @@
 package sdcard_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/kristofer/picoceci/pkg/module"
 	"github.com/kristofer/picoceci/pkg/sdcard"
 )
 
+func getSDCardRoot(t *testing.T) string {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+
+	dir := wd
+	for {
+		if _, modErr := os.Stat(filepath.Join(dir, "go.mod")); modErr == nil {
+			root := filepath.Join(dir, "testdata", "sdcard")
+			if info, statErr := os.Stat(root); statErr == nil && info.IsDir() {
+				return root
+			}
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	t.Fatalf("could not locate testdata/sdcard from %s", wd)
+	return ""
+}
+
 func TestIntegrationModuleLoadFromSDCard(t *testing.T) {
 	// Set up SD card stub
-	sdcard.SetRoot("../../testdata/sdcard")
+	sdcard.SetRoot(getSDCardRoot(t))
 	if err := sdcard.Mount("/sdcard/"); err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}
@@ -48,7 +78,7 @@ func TestIntegrationModuleLoadFromSDCard(t *testing.T) {
 
 func TestIntegrationReadDataFile(t *testing.T) {
 	// Set up SD card stub
-	sdcard.SetRoot("../../testdata/sdcard")
+	sdcard.SetRoot(getSDCardRoot(t))
 	if err := sdcard.Mount("/sdcard/"); err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}
@@ -68,7 +98,7 @@ func TestIntegrationReadDataFile(t *testing.T) {
 
 func TestIntegrationFileOperations(t *testing.T) {
 	// Set up SD card stub
-	sdcard.SetRoot("../../testdata/sdcard")
+	sdcard.SetRoot(getSDCardRoot(t))
 	if err := sdcard.Mount("/sdcard/"); err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}
@@ -109,7 +139,7 @@ func TestIntegrationFileOperations(t *testing.T) {
 
 func TestIntegrationDirectoryListing(t *testing.T) {
 	// Set up SD card stub
-	sdcard.SetRoot("../../testdata/sdcard")
+	sdcard.SetRoot(getSDCardRoot(t))
 	if err := sdcard.Mount("/sdcard/"); err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}
