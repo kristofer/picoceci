@@ -237,7 +237,7 @@ func (p *Parser) parseVarDecl() *ast.VarDecl {
 	for p.cur.Kind == lexer.KEYWORD || p.cur.Kind == lexer.IDENTIFIER {
 		if p.cur.Kind == lexer.IDENTIFIER {
 			// Bare identifier without type annotation — parse error.
-			p.errorf("missing type annotation for %q; use %q: Any for a dynamic variable", p.cur.Literal, p.cur.Literal)
+			p.errorf("missing type annotation for %q; use '%s: Any' for a dynamic variable", p.cur.Literal, p.cur.Literal)
 			p.advance()
 			continue
 		}

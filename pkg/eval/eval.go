@@ -220,7 +220,11 @@ func typeMatches(typeName string, val *object.Object) bool {
 	case "Nil":
 		return val.Kind == object.KindNil
 	default:
-		// User-defined object or interface type: accept any Object or Nil.
+		// User-defined object or interface type name (any IDENTIFIER not matching a
+		// built-in type keyword). Accepts KindObject (an instance of any user object)
+		// or KindNil (the unassigned zero value for user-defined types). Unrecognised
+		// type names are treated as user-defined; typos will not be caught at parse
+		// time — only incorrect kind assignments trigger TypeError at runtime.
 		return val.Kind == object.KindObject || val.Kind == object.KindNil
 	}
 }
@@ -747,7 +751,7 @@ func (interp *Interpreter) registerObjectDecl(decl *ast.ObjectDecl, env *Env) {
 
 	// `new` method: create an instance and call `init` if it exists.
 	capturedSlots := allSlots
-	// capturedSlotTypes is captured from the enclosing factory building block above.
+	// Slot types are accessed via self.SlotTypes (set to capturedSlotTypes on the factory above).
 	factory.Methods["new"] = &object.MethodDef{
 		Selector: "new",
 		Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
