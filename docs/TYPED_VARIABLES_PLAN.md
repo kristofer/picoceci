@@ -1,13 +1,15 @@
 # picoceci v2 — Typed Variables: Feasibility and Scope Plan
 
-Version: 0.1-draft  
+Version: 0.2-draft  
 Status: **Planning only — no implementation has been started**  
 Author: picoceci contributors  
 Target audience: contributors, reviewers, and evaluators
 
 ---
 
-> *This document is a planning artifact. Its purpose is to assess the feasibility, scope, and programmer-experience impact of adding typed variable declarations to picoceci. No production code is changed by this document.*
+> *This document is a planning artifact. Its purpose is to define the scope and implementation plan for mandatory typed variable declarations in picoceci. No production code is changed by this document.*
+>
+> **v0.2 revision note:** Based on project direction, typed declarations are now **required** — there is no untyped fallback form. Every variable must carry an explicit type annotation; `Any` is the opt-in dynamic type. This is a breaking change to the v1 language. Since picoceci has not been publicly released, this is the right moment to enforce strict type discipline. Existing programs in this repository and in [github.com/kristofer/Canal](https://github.com/kristofer/Canal) must be updated as part of this work.
 
 ---
 
@@ -40,7 +42,7 @@ Typed variables address all of these by making the *kind of thing* a variable ca
 | **Clarity** | Declarations communicate intent to both the runtime and the reader |
 | **Safety** | Type mismatches are detected at assignment (runtime check) or at parse/compile time |
 | **Defaults** | Typed declarations are automatically initialised to their zero value, eliminating a whole class of nil-reference bugs |
-| **Backward compatibility** | Existing v1 programs that use untyped `| x |` continue to work unchanged |
+| **Required declarations** | Every variable must carry an explicit type annotation; bare `| x |` is a parse error. Use `| x: Any |` to opt into dynamic typing |
 | **Typed channels and sensors** | Core IoT objects gain first-class type parameters |
 | **Composability** | Typed slots in objects and typed method parameters enable better tooling |
 
@@ -56,19 +58,14 @@ A typed variable declaration annotates each name with its type using a colon-sep
 | x: Int  y: Float  running: Bool  name: String |
 ```
 
-An untyped name (v1 form) is still allowed and defaults to `Any` — the dynamic type that accepts any value, exactly as today:
+Every variable **must** carry a type annotation — the bare `| x |` form (without `: TypeName`) is a parse error in v2. To retain full dynamism for a variable, declare it explicitly as `Any`:
 
 ```picoceci
-| x |           "v1 — untyped (Any), nil by default"
-| x: Int |      "v2 — typed as Int, 0 by default"
+| x: Any |      "explicitly dynamic — nil by default, accepts any value"
+| x: Int |      "typed as Int, 0 by default"
 ```
 
-Both forms may appear in the same declaration block:
-
-```picoceci
-| count: Int  label  threshold: Float |
-"count=0, label=nil (Any), threshold=0.0"
-```
+`Any` is the escape hatch for code that genuinely needs dynamic behaviour; it must be stated explicitly rather than implied by omission.
 
 ### 3.2 Default zero values
 
@@ -85,7 +82,7 @@ When a typed variable is declared but not yet assigned, its value is its type's 
 | `ByteArray` | `#[]` | empty byte array |
 | `Array` | `#()` | empty array |
 | `Nil` | `nil` | explicit nil type, for compatibility |
-| `Any` | `nil` | untyped (v1 behaviour) |
+| `Any` | `nil` | explicitly dynamic; accepts any value, no type check on assignment |
 | `<ObjectName>` | `nil` | user-defined object type; nil until assigned |
 | `<InterfaceName>` | `nil` | interface type; nil until assigned |
 
@@ -349,10 +346,10 @@ This shifts picoceci from the mental model of Smalltalk-style dynamism toward Go
 ### 5.2 The two-tier type system: `Any` and typed names
 
 v2 introduces a deliberate two-tier approach:
-- **Untyped (`Any`)** — the v1 default. Retains full dynamism for exploratory code and scripts.
-- **Typed** — opt-in for production domains that need reliability guarantees.
+- **Explicitly dynamic (`Any`)** — must be written as `| x: Any |`. Retains full dynamism for exploratory code and scripts, but the intent must be stated explicitly. `Any` variables still start as `nil` and accept any value without a type check.
+- **Typed** — the normal case. All variables carry a concrete type unless the programmer actively opts into `Any`.
 
-This mirrors the Go philosophy: use interfaces (`Any` ≈ `interface{}`) when you need to, and use concrete types when you can afford to be specific.
+This mirrors the Go philosophy: use interfaces (`Any` ≈ `interface{}`) when you need to, and use concrete types when you can afford to be specific. Unlike Go, picoceci makes the dynamic opt-in *explicit* — there is no implicit `interface{}` escape.
 
 ### 5.3 Typed declarations as living documentation
 
@@ -378,15 +375,31 @@ The zero-value rule ("every typed declaration is initialised to its zero value a
 
 ---
 
-## 6. Backward Compatibility
+## 6. Breaking Change and Migration
 
-**All v1 programs remain valid.** The untyped `| x |` form is equivalent to `| x: Any |` and behaves identically to v1:
+**This is a breaking change.** The untyped `| x |` form is no longer valid; the parser will reject it. Since picoceci has not been publicly released, there is no existing user base to protect — this is the right moment to enforce strict type discipline before any external commitments are made.
 
-- No default-value rule applies (still starts as `nil`).
-- No type check on assignment.
-- No runtime `TypeError` on type mismatch.
+### 6.1 Scope of migration
 
-A v1 program can be migrated to v2 incrementally: annotate one slot at a time, run the program, and verify correctness. There is no "big bang" migration requirement.
+Two repositories contain picoceci source files that must be updated:
+
+| Repository | Action |
+|---|---|
+| `github.com/kristofer/picoceci` | Update all `testdata/` programs; update `LANGUAGE_SPEC.md` and grammar |
+| `github.com/kristofer/Canal` | Update all picoceci code examples and generated glue files |
+
+### 6.2 Migration rule
+
+The migration from v1 to v2 is mechanical:
+
+- Any bare `| x |` declaration becomes `| x: Any |`.
+- Wherever the intended type is known, replace `Any` with the concrete type (e.g. `| count: Int |`).
+
+A one-pass `sed`/`awk` script can handle the mechanical `Any` substitution; typed annotations are then added incrementally by the developer.
+
+### 6.3 No incremental compatibility path
+
+Unlike the original v0.1 design, there is no "mix typed and untyped in the same block" allowance. Every name in every `| ... |` block must have an explicit `: TypeName`. This keeps the parser and type-checker simple and prevents the gradual degradation of typed codebases through accidental untyped additions.
 
 ---
 
@@ -478,7 +491,7 @@ type VarDecl struct {
 type VarDecl struct {
     Pos   token.Pos
     Names []string   // parallel slices
-    Types []string   // "" or "Any" means untyped (v1 behaviour)
+    Types []string   // always populated; "Any" means explicitly dynamic
 }
 ```
 
@@ -502,12 +515,12 @@ type ObjectDecl struct {
     Name      string
     Composes  []string
     Slots     []string   // parallel slices
-    SlotTypes []string   // "" or "Any" → untyped
+    SlotTypes []string   // always populated; "Any" means explicitly dynamic
     Methods   []*MethodDef
 }
 ```
 
-Parallel slices preserve backward compatibility — a `SlotTypes` entry of `""` means "no type annotation."
+Parallel slices keep the AST representation straightforward — `SlotTypes[i]` is always a non-empty string. An entry of `"Any"` means the programmer explicitly opted into dynamic typing.
 
 ### 8.4 Parser (`pkg/parser/`)
 
@@ -520,10 +533,10 @@ The `parseVarDecl()` function currently reads:
 It must be extended to read:
 
 ```
-'|' ( identifier [ ':' typeName ] )* '|'
+'|' ( identifier ':' typeName )+ '|'
 ```
 
-where `typeName` is an `IDENTIFIER` (primitive keyword like `Int`, `Float`) or a user-defined object/interface name.
+where `typeName` is an `IDENTIFIER` (primitive keyword like `Int`, `Float`) or a user-defined object/interface name. The `:` and `typeName` are **required** — a bare identifier without a type annotation is a parse error that reports "missing type annotation; use `: Any` for a dynamic variable".
 
 The `parseObjectDecl()` slot parsing path calls `parseVarDecl()` and stores only names; it must additionally store types.
 
@@ -558,13 +571,11 @@ case *ast.VarDecl:
 ```go
 case *ast.VarDecl:
     for i, name := range node.Names {
-        typeName := ""
-        if i < len(node.Types) {
-            typeName = node.Types[i]
-        }
-        env.DefineTyped(name, typeName)  // sets to zero value for type
+        env.DefineTyped(name, node.Types[i])  // sets to zero value for type
     }
 ```
+
+Because the parser guarantees `node.Types[i]` is always a non-empty string, there is no legacy untyped code path in the evaluator. `"Any"` maps to `nil` as its zero value and imposes no type check on assignment.
 
 **Assignment evaluation** gains a type guard:
 
@@ -591,7 +602,7 @@ Two new opcodes:
 
 The compiler emits `INIT_TYPED_LOCAL` for each typed variable declaration and `CHECK_TYPE` before each `STORE_LOCAL` / `STORE_INST` that targets a typed slot.
 
-For untyped variables (`type-tag = 0`), neither opcode is emitted — this preserves v1 bytecode behaviour exactly.
+For `Any` variables (`type-tag = ANY_TAG`), `INIT_TYPED_LOCAL` still runs (setting the slot to `nil`) but `CHECK_TYPE` is a no-op that the optimizer can elide — so the runtime overhead for dynamic variables is minimal while still going through the unified typed path.
 
 ### 8.8 VM (`pkg/bytecode/vm.go`)
 
@@ -649,7 +660,7 @@ var_decl
     ;
 
 typed_name
-    = IDENTIFIER , [ ":" , type_name ]
+    = IDENTIFIER , ":" , type_name
     ;
 
 type_name
@@ -659,6 +670,8 @@ type_name
     | IDENTIFIER , "<<" , type_name , ">>"   (* generic: Channel<<Float>> *)
     ;
 ```
+
+Note: the `[ ":" , type_name ]` optional form from v0.1 is replaced by `":" , type_name` (required). A bare identifier inside `| ... |` is a syntax error.
 
 Update `object_decl` to use the new `var_decl`.
 
@@ -671,12 +684,12 @@ Sections to update:
 | Section | Change |
 |---|---|
 | §2.3 | Add type keywords (`Int`, `Float`, `Bool`, …) to reserved words |
-| §3 (Types and Values) | Expand with zero-value table; describe `Any` vs typed |
-| §4.4 (Assignment) | Add type-guard description and TypeError |
-| §5.1 (Object declaration) | Typed slot syntax and zero-value init |
+| §3 (Types and Values) | Expand with zero-value table; describe `Any` as explicit opt-in dynamic type |
+| §4.4 (Assignment) | Add type-guard description and TypeError; update `varDecl` example to use typed form |
+| §5.1 (Object declaration) | Typed slot syntax and zero-value init; remove untyped slot example |
 | §6 (Interfaces) | Typed interface variables |
 | §10 (Concurrency) | Typed `Channel<<T>>` and `Queue<<T>>` |
-| §14 (Grammar summary) | Updated `varDecl` production |
+| §14 (Grammar summary) | Updated `varDecl` production (`:` required, not optional) |
 | New §3.x | "Typed declarations and zero values" |
 | New §9.x | "TypeError" in built-in error kinds |
 
@@ -707,18 +720,20 @@ The following tasks are sized relative to each other. All are conditional on des
 |---|------|-------------|-----------------|
 | T1 | Finalise syntax design (§7 decisions) | ADR document | 0.5 days |
 | T2 | Lexer: KEYWORD-reuse in var-decl context | `pkg/lexer/` | 0.5 days |
-| T3 | AST: typed VarDecl and ObjectDecl | `pkg/ast/ast.go` | 0.5 days |
-| T4 | Parser: typed var-decl, typed slots | `pkg/parser/parser.go` | 1 day |
+| T3 | AST: typed VarDecl and ObjectDecl (required types) | `pkg/ast/ast.go` | 0.5 days |
+| T4 | Parser: required typed var-decl, typed slots, error on bare `| x |` | `pkg/parser/parser.go` | 1 day |
 | T5 | Object: DeclaredKind field, zero values | `pkg/object/object.go` | 0.5 days |
 | T6 | Eval: DefineTyped, CheckType, TypeError | `pkg/eval/eval.go` + `errors.go` | 1 day |
 | T7 | Runtime: TypeError object, typed Channel | `pkg/runtime/` | 1 day |
 | T8 | Bytecode compiler: INIT_TYPED_LOCAL, CHECK_TYPE | `pkg/bytecode/compiler.go` | 1.5 days |
 | T9 | VM: new opcodes, typed slot init | `pkg/bytecode/vm.go` | 1 day |
-| T10 | Test data: typed programs, error tests | `testdata/typed/` | 1 day |
-| T11 | Docs: grammar, LANGUAGE_SPEC, IMPL_PLAN | markdown edits | 1 day |
+| T10 | Test data: new typed programs, error tests for bare `| x |` | `testdata/typed/` | 1 day |
+| T10a | Migrate existing `testdata/` programs to typed form | `testdata/` | 0.5 days |
+| T10b | Update `github.com/kristofer/Canal` picoceci references | Canal repo | 1 day |
+| T11 | Docs: grammar (`:` required), LANGUAGE_SPEC, IMPL_PLAN | markdown edits | 1 day |
 | T12 | Docs: whitepaper update | `docs/picoceci-whitepaper.md` | 1 day |
 | T13 | Integration test and bug-fix pass | CI green | 1 day |
-| **Total** | | | **~11 days** |
+| **Total** | | | **~12.5 days** |
 
 ---
 
@@ -726,16 +741,20 @@ The following tasks are sized relative to each other. All are conditional on des
 
 ### 11.1 Technical feasibility
 
-**High.** The change is additive and backward-compatible. The existing code in `pkg/eval/eval.go` already distinguishes value kinds via `object.Kind`; `CheckType` is a straightforward lookup-and-compare operation. The AST change (parallel `Types []string` field) is non-breaking — any code that does not read `Types` continues to work.
+**High.** The change is technically straightforward; the main difference from v0.1 is that there is no backward-compat code path to maintain. Removing the optional `[ ':' typeName ]` grammar form actually simplifies the parser. The existing code in `pkg/eval/eval.go` already distinguishes value kinds via `object.Kind`; `CheckType` is a straightforward lookup-and-compare operation.
 
-The most complex part is the bytecode compiler path (T8), because it must distinguish typed from untyped locals at compile time and emit the right initialisation sequence. However, the existing phase-3 infrastructure (chunk, opcode tables) is already in place and ready to accept new opcodes.
+This is a breaking change in language semantics. However, since picoceci has not been publicly released, the migration cost is confined to programs within this repository and `github.com/kristofer/Canal`. The migration is mechanical (§6.2) and can be completed before any public release.
+
+The most complex part is still the bytecode compiler path (T8), because it must emit the right initialisation sequence for every variable. The `Any` type requires `INIT_TYPED_LOCAL` (to set the slot to `nil`) but skips `CHECK_TYPE`, preserving near-zero overhead for dynamic variables.
 
 ### 11.2 Impact on existing tests
 
-Existing v1 test programs in `testdata/` continue to pass unchanged because:
-- Untyped `| x |` is still legal.
-- The `DefineTyped` path with an empty/`Any` type reproduces current `Define` behaviour.
-- No new opcodes are emitted for untyped variables.
+Existing v1 test programs in `testdata/` will **fail to parse** after this change because they contain bare `| x |` declarations. They must be migrated:
+
+1. Any `| x |` that genuinely needs dynamic behaviour becomes `| x: Any |`.
+2. Any `| x |` where the type is known should be given its concrete type.
+
+This migration must be completed as part of the v2 implementation work (added as task T10a — see §10). All migrated tests must pass before the feature is considered complete. New test cases for parse errors on bare `| x |` forms should also be added.
 
 ### 11.3 Risk areas
 
@@ -744,14 +763,18 @@ Existing v1 test programs in `testdata/` continue to pass unchanged because:
 | Lexer ambiguity: `x:` in var-decl vs message keyword | Parser-level disambiguation (check position inside `| ... |`) |
 | Generic channel syntax conflicts with block `[` | Use `<<T>>` instead of `[T]`; revisit in v2.1 |
 | Typed parameters (§7.1) are complicated | Defer to v2.1; focus v2.0 on local vars and slots |
-| Runtime type check overhead on hot paths | Only emit `CHECK_TYPE` when slot is typed; untyped paths have zero overhead |
+| Runtime type check overhead on hot paths | `Any` variables skip `CHECK_TYPE`; typed-only paths pay the check cost once per assignment |
+| Existing `testdata/` programs break | Mechanical migration (§6.2); migration is small and contained |
+| Canal repository has picoceci references | Coordinate update of `github.com/kristofer/Canal` alongside this work (§6.1) |
 | Whitepaper tone consistency | Maintain the whitepaper's accessible, first-person narrative style while adding technical precision |
 
 ### 11.4 Scope conclusion
 
-This is a **medium-scope** feature: approximately 11 developer-days of implementation work plus 2 additional days for review and iteration. The feature is independently deliverable in a new `v2-types` branch without blocking other in-progress work (Phase 3 bytecode VM, Phase 4 module system).
+This is a **medium-scope** feature: approximately 11 developer-days of implementation work plus 2 additional days for review and iteration. The removal of backward compatibility simplifies the interpreter and parser slightly (no dual code paths), while adding a one-time migration cost for `testdata/` and Canal.
 
-The impact on the programmer's mental model is **positive and significant**: typed declarations transform picoceci from a quick-scripting language into a language suitable for building *reliable* IoT domains, which is exactly the spacecraft-watchman vision the project was designed to realize.
+The feature is independently deliverable in a new `v2-types` branch without blocking other in-progress work (Phase 3 bytecode VM, Phase 4 module system). However, the Canal update should be coordinated closely so that both repositories move to v2 semantics together.
+
+The impact on the programmer's mental model is **positive and significant**: mandatory typed declarations transform picoceci from a quick-scripting language into a language suitable for building *reliable* IoT domains from the very first program — which is exactly the spacecraft-watchman vision the project was designed to realize.
 
 ---
 
@@ -759,10 +782,12 @@ The impact on the programmer's mental model is **positive and significant**: typ
 
 1. Review this document with the project team.
 2. Make design decisions on the open items in §7 (parameter syntax and channel generic syntax).
-3. Write an Architecture Decision Record (ADR) capturing those decisions.
-4. Once ADR is approved, open a `v2-types` branch and begin with T1–T6 (interpreter path), keeping the bytecode path (T7–T9) in a subsequent PR.
-5. Update this plan document with any scope changes discovered during implementation.
+3. Write an Architecture Decision Record (ADR) capturing those decisions and confirming that mandatory typed declarations are the chosen direction.
+4. Audit `testdata/` in this repository and all picoceci code in `github.com/kristofer/Canal` for bare `| x |` declarations (T10a / T10b).
+5. Once ADR is approved, open a `v2-types` branch and begin with T1–T6 (interpreter path), keeping the bytecode path (T7–T9) in a subsequent PR.
+6. Coordinate the Canal update to land at the same time as, or immediately after, the interpreter PR.
+7. Update this plan document with any scope changes discovered during implementation.
 
 ---
 
-*End of Typed Variables Plan v0.1-draft*
+*End of Typed Variables Plan v0.2-draft*
