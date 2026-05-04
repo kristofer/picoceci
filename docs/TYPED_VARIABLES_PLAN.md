@@ -80,8 +80,8 @@ When a typed variable is declared but not yet assigned, its value is its type's 
 | `Float` | `0.0` | IEEE-754 double |
 | `Bool` | `false` | |
 | `String` | `''` | empty string (not nil) |
-| `Char` | `$\0` | NUL character; `$\0` uses picoceci's character-escape syntax `$\` + escape letter (`\0` = NUL, `\n` = newline — see LANGUAGE_SPEC §2.5) |
-| `Symbol` | `#''` | empty interned symbol; `#'...'` is picoceci's symbol-from-string notation (LANGUAGE_SPEC §2.5) — the empty symbol has no characters after `#` |
+| `Char` | `$\0` | NUL character; in picoceci a character literal is a `$` followed by a character or escape sequence (`$A` = 'A', `$\n` = newline, `$\0` = NUL — see LANGUAGE_SPEC §2.5) |
+| `Symbol` | `#''` | empty interned symbol; picoceci allows symbols to be written as `#'<text>'`, so `#''` is the symbol formed from an empty string (see LANGUAGE_SPEC §2.5) |
 | `ByteArray` | `#[]` | empty byte array |
 | `Array` | `#()` | empty array |
 | `Nil` | `nil` | explicit nil type, for compatibility |
@@ -124,7 +124,7 @@ Typed slots give every instance of `TempSensor` a guaranteed layout: readers of 
 
 > **v2.0 scope note:** Typed method parameters are a v2.1 feature. The domain examples in §4 deliberately use untyped method selectors (v1 form) so they reflect only the v2.0 scope — typed local variables and typed object slots. This section describes the *design space* being considered for v2.1.
 
-Method parameters can carry type annotations alongside the selector keyword. Because the parameter name must differ from the keyword to avoid parse ambiguity, each keyword-parameter pair takes the form `keyword: paramName: TypeName`. Two syntax options are under consideration (see §7.1 for the full discussion):
+Method parameters can carry type annotations alongside the selector keyword. This is a v2.1 design concern — two syntax options are under consideration (see §7.1 for the full discussion):
 
 **Option A — inline annotation (parameter name distinct from keyword):**
 
@@ -182,7 +182,7 @@ object AtmosNode {
     |
 
     init: i2c reportTo: ch [
-        co2      := CO2Sensor  new init: i2c address: 16r61.
+        co2      := CO2Sensor new init: i2c address: 16r61.
         humidity := HumiditySensor new init: i2c address: 16r44.
         temp     := TempSensor new init: i2c address: 16r48.
         reportCh := ch.
@@ -399,15 +399,15 @@ Two candidate syntaxes exist:
 **Option A — Inline annotation after parameter name:**
 
 ```picoceci
-setpoint: sp: Float dt: deltaT: Float [ ... ]
+setpoint: sp: Float timestep: deltaT: Float [ ... ]
 ```
 
-This keeps the selector keyword and the parameter name together but requires the parser to distinguish `sp:` (parameter name) from `Float` (type annotation) from the next keyword `dt:`. Note that the parameter name (`sp`, `deltaT`) must differ from the keyword prefix (`setpoint`, `dt`) to avoid ambiguity.
+This keeps the selector keyword and the parameter name together but requires the parser to distinguish `sp:` (parameter name colon) from `Float` (type annotation) from the next keyword `timestep:`. The parameter name must always differ from the keyword token that precedes it — e.g., `sp` ≠ `setpoint`, `deltaT` ≠ `timestep`.
 
 **Option B — Separate annotation block:**
 
 ```picoceci
-setpoint: sp dt: deltaT [| sp: Float  deltaT: Float | ... ]
+setpoint: sp timestep: deltaT [| sp: Float  deltaT: Float | ... ]
 ```
 
 The method body opens with a typed var-decl that annotates the parameter names introduced by the selector. Those names already exist as local bindings; the typed var-decl simply adds a type constraint and zero-value initialisation rule. Simpler to parse; more verbose.
