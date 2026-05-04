@@ -1,6 +1,6 @@
 (*
   picoceci Formal Grammar (EBNF)
-  Version: 0.1-draft
+  Version: 2.0-draft
 
   Notation:
     =       definition
@@ -89,7 +89,18 @@ statement
     ;
 
 var_decl
-    = "|" , { IDENTIFIER } , "|"
+    = "|" , typed_name , { typed_name } , "|"
+    ;
+
+typed_name
+    = IDENTIFIER , ":" , type_name
+    ;
+
+type_name
+    = "Int" | "Float" | "Bool" | "String" | "Char"
+    | "Symbol" | "ByteArray" | "Array" | "Any" | "Nil"
+    | IDENTIFIER                              (* user-defined object or interface name *)
+    | IDENTIFIER , "<<" , type_name , ">>"   (* generic: Channel<<Float>> *)
     ;
 
 return_stmt

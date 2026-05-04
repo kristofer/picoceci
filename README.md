@@ -9,7 +9,7 @@ picoceci is a message-passing interpreted language that borrows Smalltalk's eleg
 | Feature | Choice |
 |---|---|
 | Syntax | Smalltalk-inspired (messages, blocks, cascades) |
-| Typing | Structural / interface-based (like Go) |
+| Typing | Typed declarations required; `Any` for explicit dynamic opt-in |
 | Polymorphism | Composition over inheritance — no class hierarchy |
 | Runtime host | TinyGo → bare-metal ESP32-S3 |
 | Storage | SD card up to 32 GB (FAT32 / littlefs) |
@@ -23,7 +23,7 @@ picoceci is a message-passing interpreted language that borrows Smalltalk's eleg
 Console println: 'Hello, picoceci!'.
 
 "Fibonacci using a block"
-| fib |
+| fib: Block |
 fib := [ :n |
     (n <= 1)
         ifTrue:  [ n ]
@@ -31,10 +31,9 @@ fib := [ :n |
 ].
 Console println: (fib value: 10) printString.
 
-"Composing objects"
+"Composing objects — v2 typed slots"
 object Counter {
-    | count |
-    init  [ count := 0 ]
+    | count: Int |
     inc   [ count := count + 1. ^self ]
     value [ ^count ]
 }
@@ -44,7 +43,7 @@ object LoggedCounter {
     inc [ super inc. Console println: 'incremented'. ^self ]
 }
 
-| c |
+| c: LoggedCounter |
 c := LoggedCounter new.
 c inc; inc; inc.
 Console println: c value printString.   "=> 3"
@@ -55,19 +54,22 @@ Console println: c value printString.   "=> 3"
 ```
 picoceci/
 ├── README.md               ← you are here
-├── LANGUAGE_SPEC.md        ← full language specification
+├── LANGUAGE_SPEC.md        ← full language specification (v2)
 ├── IMPLEMENTATION_PLAN.md  ← phased implementation roadmap (agent-ready)
 ├── docs/
-│   ├── grammar.ebnf        ← formal EBNF grammar
-│   ├── stdlib.md           ← standard library reference
-│   ├── freertos-bridge.md  ← FreeRTOS / TinyGo runtime bridge
-│   └── sdcard.md           ← SD-card / filesystem API
+│   ├── grammar.ebnf            ← formal EBNF grammar (v2)
+│   ├── TYPED_VARIABLES_PLAN.md ← v2 typed-variable design and implementation plan
+│   ├── stdlib.md               ← standard library reference
+│   ├── freertos-bridge.md      ← FreeRTOS / TinyGo runtime bridge
+│   └── sdcard.md               ← SD-card / filesystem API
 └── go.mod                  ← Go module skeleton for the interpreter
 ```
 
 ## Status
 
 🚧 **Specification phase** — the documents above define everything an agent (or human) needs to implement the interpreter and runtime.
+
+**v2** — typed variable declarations are now required.  Every variable must carry an explicit type annotation (`| x: Int |`); bare `| x |` is a parse error.  Use `| x: Any |` to opt into dynamic typing.  See [`docs/TYPED_VARIABLES_PLAN.md`](docs/TYPED_VARIABLES_PLAN.md) for the full design rationale and implementation plan.
 
 ## Relation to Canal
 
