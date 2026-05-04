@@ -1,6 +1,6 @@
 # picoceci Language Specification
 
-Version: 0.1-draft  
+Version: 2.0-draft  
 Status: Specification — not yet implemented  
 Target runtime: TinyGo 0.32+ on ESP32-S3-N16R8 (and compatible MCUs)
 
@@ -68,6 +68,12 @@ Identifiers starting with a capital letter are conventionally used for object (t
 ```
 nil  true  false  self  super  thisContext
 object  interface  compose  import  ^
+```
+
+**Type keywords** (used in typed variable declarations — also reserved):
+
+```
+Int  Float  Bool  String  Char  Symbol  ByteArray  Array  Any  Nil
 ```
 
 ### 2.4 Keywords
@@ -151,7 +157,9 @@ nil
 
 ## 3. Types and Values
 
-picoceci is **dynamically typed at the script level** but the runtime tags every value with its kind.  The following primitive value types exist:
+picoceci v2 is **statically typed by declaration**: every variable must carry an explicit type annotation.  The runtime tags every value with its kind and enforces the declared type at the point of assignment.  Use `Any` to opt into dynamic typing where genuinely needed.
+
+The following primitive value types exist:
 
 | Type tag | Description | Size (bytes) |
 |---|---|---|
@@ -243,6 +251,33 @@ printString
 
 Like Array but holds only bytes (0–255).
 
+### 3.7 Typed declarations and zero values
+
+Every variable declaration **must** include a type annotation.  The bare `| x |` form is a parse error in v2 — use `| x: Any |` to retain fully dynamic behaviour.
+
+```picoceci
+| x: Int  y: Float  running: Bool  name: String |
+```
+
+When a typed variable is declared but not yet assigned, it is automatically initialised to its type's *zero value*:
+
+| Type keyword | Zero value | Notes |
+|---|---|---|
+| `Int` | `0` | 63-bit signed integer |
+| `Float` | `0.0` | IEEE-754 double |
+| `Bool` | `false` | |
+| `String` | `''` | empty string (not nil) |
+| `Char` | `$\0` | NUL character |
+| `Symbol` | `#''` | empty interned symbol |
+| `ByteArray` | `#[]` | empty byte array |
+| `Array` | `#()` | empty array |
+| `Nil` | `nil` | explicit nil type |
+| `Any` | `nil` | explicitly dynamic; accepts any value, no type check on assignment |
+| `<ObjectName>` | `nil` | user-defined object type; nil until assigned |
+| `<InterfaceName>` | `nil` | interface type; nil until assigned |
+
+`Any` is the explicit escape hatch for code that genuinely needs dynamic behaviour.  It must be stated explicitly rather than implied by omission.  Assigning a value of the wrong type to a non-`Any` variable raises a `TypeError` at runtime.
+
 ---
 
 ## 4. Expressions
@@ -286,13 +321,20 @@ stream nextPutAll: 'hello'; nl.
 
 ### 4.4 Assignment
 
-```
-| x y |
+```picoceci
+| x: Int  y: Int |
 x := 42.
 y := x + 1.
 ```
 
-Variables must be declared in a `| ... |` declaration before use within a scope.
+Variables must be declared in a `| ... |` declaration before use within a scope.  Every declaration **requires** a type annotation (see §3.7).  Assigning a value whose kind does not match the declared type raises a `TypeError` at runtime:
+
+```picoceci
+| count: Int |
+count := 'hello'.   "TypeError: count expects Int, got String"
+```
+
+Use `| count: Any |` to allow any value without a type check.
 
 ### 4.5 Cascade
 
@@ -328,11 +370,7 @@ There are **no classes** in picoceci.  Instead, `object` defines a named prototy
 
 ```picoceci
 object Counter {
-    | count |
-
-    init [
-        count := 0
-    ]
+    | count: Int |
 
     inc [
         count := count + 1.
@@ -354,15 +392,15 @@ object Counter {
 }
 ```
 
-- `| count |` — instance variable declaration (slots).
-- Methods are unary (`init`, `inc`, `value`) or keyword (`at:`, `at:put:`) or binary (`+`).
-- `init` is called automatically by `new`.
+- `| count: Int |` — typed instance variable declaration (slot).  `count` is automatically initialised to `0` (the zero value for `Int`); no `init` method is needed for zeroing.
+- Methods are unary (`inc`, `value`) or keyword (`at:`, `at:put:`) or binary (`+`).
+- `init` is still called automatically by `new` when defined, but is needed only for non-zero initialisation.
 - Methods can take parameters using keyword syntax: `add: n [ count := count + n. ^self ]`.
 
 ### 5.2 Creating instances
 
 ```picoceci
-| c |
+| c: Counter |
 c := Counter new.
 ```
 
@@ -394,12 +432,12 @@ Rules:
 For simple ad-hoc objects:
 
 ```picoceci
-| point |
+| point: Any |
 point := object { x := 3. y := 4 }.
 Console println: point x printString.
 ```
 
-These are anonymous objects with no named template.  They satisfy any interface whose messages they respond to.
+These are anonymous objects with no named template.  They satisfy any interface whose messages they respond to.  Because no named type exists for the literal, declare the variable as `Any` (or as an interface type that the literal satisfies).
 
 ---
 
@@ -425,8 +463,10 @@ picoceci uses **structural typing** — an object satisfies an interface if it r
 
 ### 6.2 Interface variables
 
+Declare a variable with an interface name as its type to hold any object satisfying that interface:
+
 ```picoceci
-| c |
+| c: Incrementable |
 c := LoggedCounter new.
 (c satisfies: Incrementable)
     ifTrue: [ Console println: 'yes' ].
@@ -480,13 +520,13 @@ x > 0
 ```picoceci
 #(1 2 3) do: [ :each | Console println: each printString ].
 
-| doubled |
+| doubled: Array |
 doubled := #(1 2 3) collect: [ :each | each * 2 ].
 
-| evens |
+| evens: Array |
 evens := #(1 2 3 4) select: [ :each | each \\ 2 = 0 ].
 
-| sum |
+| sum: Int |
 sum := #(1 2 3) inject: 0 into: [ :acc :each | acc + each ].
 ```
 
@@ -514,7 +554,7 @@ A block is a first-class object encapsulating deferred computation.
 Blocks capture variables from their enclosing scope.
 
 ```picoceci
-| adder |
+| adder: Block |
 adder := [ :n | [ :x | x + n ] ].
 (adder value: 5) value: 3.   "=> 8"
 ```
@@ -556,6 +596,7 @@ Error signal: 'something went wrong'.
 |---|---|
 | `Error` | Base error |
 | `MessageNotUnderstood` | Object received unknown message |
+| `TypeError` | Assignment type mismatch (v2 typed variables) |
 | `InterfaceError` | Argument does not satisfy interface |
 | `IndexOutOfBounds` | Array / string index out of range |
 | `IOError` | Filesystem / network failure |
@@ -571,7 +612,7 @@ picoceci exposes FreeRTOS primitives through a set of built-in objects.
 ### 10.1 Tasks
 
 ```picoceci
-| task |
+| task: Any |
 task := Task spawn: [
     [ true ] whileTrue: [
         Console println: 'tick'.
@@ -597,25 +638,29 @@ task name: 'blinker'.
 
 ### 10.2 Queues
 
+Queues carry a type parameter that restricts what may be sent.  Use `Queue<<TypeName>>` to declare a typed queue:
+
 ```picoceci
-| q |
+| q: Queue<<Int>> |
 q := Queue new: 10.
 
 "Producer"
 Task spawn: [
     q send: 42.
-    q send: 'hello'
+    q send: 99
 ].
 
 "Consumer"
 Task spawn: [
     [ true ] whileTrue: [
-        | item |
+        | item: Int |
         item := q receive.
         Console println: item printString
     ]
 ].
 ```
+
+Sending a value whose type does not match raises a `TypeError` at the point of send.  An unparameterised `Queue<<Any>>` accepts any value (equivalent to v1 behaviour).
 
 | Message | FreeRTOS equivalent |
 |---|---|
@@ -629,7 +674,7 @@ Task spawn: [
 ### 10.3 Semaphores
 
 ```picoceci
-| sem |
+| sem: Any |
 sem := Semaphore new.           "binary semaphore"
 sem := Semaphore counting: 4.  "counting semaphore, max 4"
 
@@ -650,7 +695,7 @@ sem take timeout: 500.
 ### 10.4 Timers
 
 ```picoceci
-| t |
+| t: Any |
 t := Timer after: 500 do: [ Console println: 'fired' ].
 t := Timer every: 1000 do: [ led toggle ].
 t stop.
@@ -660,15 +705,26 @@ t reset.
 
 ### 10.5 Channels (higher-level)
 
-`Channel` is a picoceci-level abstraction over Queue with type hints and Go-like syntax:
+`Channel` is a picoceci-level abstraction over Queue with Go-like syntax and a mandatory type parameter:
 
 ```picoceci
-| ch |
+| ch: Channel<<Float>> |
 ch := Channel new: 5.
-ch <- 42.           "send"
-| v |
-v := <-ch.         "receive"
+ch <- 3.14.           "send — TypeError if not Float"
+| v: Float |
+v := <-ch.            "receive"
 ```
+
+Multiple typed channels can be declared together:
+
+```picoceci
+| tempChan:  Channel<<Float>>
+  alertChan: Channel<<String>>
+  cmdQueue:  Queue<<Symbol>>
+|
+```
+
+Sending a value of the wrong type raises a `TypeError` at the point of send, before it reaches any consumer task.  Use `Channel<<Any>>` to allow mixed-type payloads.
 
 ---
 
@@ -754,7 +810,7 @@ Bridge declarations are generated by the `picoceci-bindgen` tool from TinyGo sou
 A Canal capability is a handle to a kernel resource.  picoceci wraps capabilities as objects:
 
 ```picoceci
-| cap |
+| cap: Any |
 cap := Canal capability: #uart0.
 cap send: 'hello\n' asBytes.
 cap close.
@@ -773,13 +829,13 @@ Canal capability objects respond to:
 ### 13.3 GPIO / peripheral objects (built-in)
 
 ```picoceci
-| led |
+| led: Any |
 led := GPIO pin: 2 direction: #output.
 led high.
 led low.
 led toggle.
 
-| btn |
+| btn: Any |
 btn := GPIO pin: 0 direction: #input pullup: true.
 btn waitForEdge: #rising timeout: 5000.
 ```
@@ -787,7 +843,7 @@ btn waitForEdge: #rising timeout: 5000.
 ### 13.4 UART
 
 ```picoceci
-| uart |
+| uart: Any |
 uart := UART new: 0 baud: 115200.
 uart println: 'Hello from picoceci'.
 uart readLine.
@@ -796,10 +852,10 @@ uart readLine.
 ### 13.5 I²C / SPI
 
 ```picoceci
-| i2c |
+| i2c: Any |
 i2c := I2C new: 0 sda: 21 scl: 22 speed: 400000.
 i2c writeTo: 16r48 bytes: #[1 2 3].
-| data |
+| data: ByteArray |
 data := i2c readFrom: 16r48 count: 4.
 ```
 
@@ -816,7 +872,12 @@ statement       = '^' expression
                 | varDecl
                 | expression
 
-varDecl         = '|' identifier* '|'
+varDecl         = '|' typedName { typedName } '|'
+typedName       = identifier ':' typeName
+typeName        = 'Int' | 'Float' | 'Bool' | 'String' | 'Char'
+                | 'Symbol' | 'ByteArray' | 'Array' | 'Any' | 'Nil'
+                | IDENTIFIER
+                | IDENTIFIER '<<' typeName '>>'
 
 expression      = assignment | cascade
 
@@ -856,4 +917,4 @@ importDecl      = 'import' STRING '.'
 
 ---
 
-*End of picoceci Language Specification v0.1-draft*
+*End of picoceci Language Specification v2.0-draft*
