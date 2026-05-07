@@ -276,11 +276,21 @@ type Interpreter struct {
 
 // New creates a new Interpreter with built-in objects registered.
 func New() *Interpreter {
+	return NewWithSinks(GlobalSinks{})
+}
+
+// NewWithSinks creates a new Interpreter with configurable Console/Transcript sinks.
+func NewWithSinks(sinks GlobalSinks) *Interpreter {
+	return NewWithGlobals(InitialGlobalsWithSinks(sinks))
+}
+
+// NewWithGlobals creates a new Interpreter using the provided initial globals.
+func NewWithGlobals(globals map[string]*object.Object) *Interpreter {
 	interp := &Interpreter{
 		globals:         NewEnv(),
 		objectTemplates: make(map[string]*ast.ObjectDecl),
 	}
-	registerBuiltins(interp.globals)
+	registerBuiltinsWithGlobals(interp.globals, cloneGlobals(globals))
 	return interp
 }
 
@@ -289,6 +299,28 @@ func NewWithLoader(loader EvalModuleLoader) *Interpreter {
 	interp := New()
 	interp.moduleLoader = loader
 	return interp
+}
+
+// NewWithLoaderAndGlobals creates an Interpreter with a module loader and explicit globals.
+func NewWithLoaderAndGlobals(loader EvalModuleLoader, globals map[string]*object.Object) *Interpreter {
+	interp := NewWithGlobals(globals)
+	interp.moduleLoader = loader
+	return interp
+}
+
+// NewWithLoaderAndSinks creates an Interpreter with a module loader and configurable sinks.
+func NewWithLoaderAndSinks(loader EvalModuleLoader, sinks GlobalSinks) *Interpreter {
+	interp := NewWithSinks(sinks)
+	interp.moduleLoader = loader
+	return interp
+}
+
+func cloneGlobals(globals map[string]*object.Object) map[string]*object.Object {
+	cloned := make(map[string]*object.Object, len(globals))
+	for name, val := range globals {
+		cloned[name] = val
+	}
+	return cloned
 }
 
 // Eval evaluates a list of AST statements in the global environment.

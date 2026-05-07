@@ -25,10 +25,10 @@ type VM struct {
 
 // CallFrame represents a single activation record.
 type CallFrame struct {
-	closure   *Closure // the closure being executed
-	ip        int      // instruction pointer within chunk
-	bp        int      // base pointer (stack frame start)
-	selfObj   *object.Object // 'self' for method calls
+	closure *Closure       // the closure being executed
+	ip      int            // instruction pointer within chunk
+	bp      int            // base pointer (stack frame start)
+	selfObj *object.Object // 'self' for method calls
 }
 
 // Closure is a runtime closure (CompiledBlock + captured upvalues).
@@ -49,8 +49,23 @@ type UpvalueRef struct {
 
 // NewVM creates a new VM with default globals.
 func NewVM() *VM {
+	return NewVMWithSinks(eval.GlobalSinks{})
+}
+
+// NewVMWithSinks creates a VM with configurable Console/Transcript sinks.
+func NewVMWithSinks(sinks eval.GlobalSinks) *VM {
+	return NewVMWithGlobals(eval.InitialGlobalsWithSinks(sinks))
+}
+
+// NewVMWithGlobals creates a VM with an explicit global namespace.
+func NewVMWithGlobals(globals map[string]*object.Object) *VM {
+	copiedGlobals := make(map[string]*object.Object, len(globals))
+	for name, val := range globals {
+		copiedGlobals[name] = val
+	}
+
 	vm := &VM{
-		globals: eval.InitialGlobals(),
+		globals: copiedGlobals,
 		sp:      0,
 		blocks:  make([]*CompiledBlock, 0),
 	}

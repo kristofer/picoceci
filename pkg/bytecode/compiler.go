@@ -18,8 +18,8 @@ type ModuleLoader interface {
 
 // Compiler compiles AST nodes to bytecode.
 type Compiler struct {
-	chunk  *Chunk  // current chunk being compiled
-	scope  *scope  // current scope
+	chunk  *Chunk           // current chunk being compiled
+	scope  *scope           // current scope
 	blocks []*CompiledBlock // compiled blocks (for closures)
 
 	// For method compilation
@@ -27,18 +27,18 @@ type Compiler struct {
 	selfSlotNames []string // instance variable names when compiling a method
 
 	// Module loading support
-	moduleLoader ModuleLoader                // optional module loader
-	globals      map[string]*object.Object   // accumulated globals from imports
+	moduleLoader    ModuleLoader               // optional module loader
+	globals         map[string]*object.Object  // accumulated globals from imports
 	objectTemplates map[string]*ast.ObjectDecl // templates for compose support
 }
 
 // NewCompiler creates a new compiler.
 func NewCompiler() *Compiler {
 	return &Compiler{
-		chunk:   NewChunk(),
-		scope:   newScope(nil),
-		blocks:  make([]*CompiledBlock, 0),
-		globals: make(map[string]*object.Object),
+		chunk:           NewChunk(),
+		scope:           newScope(nil),
+		blocks:          make([]*CompiledBlock, 0),
+		globals:         make(map[string]*object.Object),
 		objectTemplates: make(map[string]*ast.ObjectDecl),
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kristofer/picoceci/pkg/bytecode"
+	"github.com/kristofer/picoceci/pkg/eval"
 	"github.com/kristofer/picoceci/pkg/lexer"
 	"github.com/kristofer/picoceci/pkg/module"
 	"github.com/kristofer/picoceci/pkg/parser"
@@ -27,6 +28,14 @@ import (
 )
 
 const version = "0.1.0-dev"
+
+// transcriptPlaceholder is a temporary Transcript sink.
+// Replace this writer with a Canal TCP session writer when ready.
+type transcriptPlaceholder struct{}
+
+func (w *transcriptPlaceholder) Write(p []byte) (int, error) {
+	return len(p), nil
+}
 
 func main() {
 	// Wait for USB CDC to initialize
@@ -136,8 +145,12 @@ func execSource(console tinygo.Console, src string, loader *module.Loader) {
 		return
 	}
 
-	// Run with fresh VM each time
-	vm := bytecode.NewVM()
+	// Run with fresh VM each time.
+	// Console stays on USB serial; Transcript is currently a placeholder sink.
+	vm := bytecode.NewVMWithSinks(eval.GlobalSinks{
+		ConsoleWriter:    console,
+		TranscriptWriter: &transcriptPlaceholder{},
+	})
 	vm.SetBlocks(c.GetBlocks())
 	vm.AddGlobals(c.GetGlobals())
 	result, err := vm.Run(chunk)

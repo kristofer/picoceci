@@ -2,6 +2,7 @@ package eval
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"strconv"
 	"strings"
@@ -16,10 +17,22 @@ type BlockCaller interface {
 	CallBlock(blk *object.Object, args []*object.Object) (*object.Object, error)
 }
 
+// GlobalSinks configures output destinations for built-in global objects.
+// Console and Transcript can be routed independently.
+type GlobalSinks struct {
+	ConsoleWriter    io.Writer
+	TranscriptWriter io.Writer
+}
+
 // InitialGlobals returns a map of global names to their initial values.
 // This includes: nil, true, false, Console, Transcript, Array.
 // Both the tree-walking interpreter and bytecode VM use this.
 func InitialGlobals() map[string]*object.Object {
+	return InitialGlobalsWithSinks(GlobalSinks{})
+}
+
+// InitialGlobalsWithSinks returns initial globals with configurable output sinks.
+func InitialGlobalsWithSinks(sinks GlobalSinks) map[string]*object.Object {
 	globals := make(map[string]*object.Object)
 
 	globals["nil"] = object.Nil
@@ -27,9 +40,14 @@ func InitialGlobals() map[string]*object.Object {
 	globals["false"] = object.False
 
 	// Console / Transcript
-	console := makeConsole()
+	console := makeConsole(sinks.ConsoleWriter)
+	transcriptWriter := sinks.TranscriptWriter
+	if transcriptWriter == nil {
+		transcriptWriter = sinks.ConsoleWriter
+	}
+	transcript := makeConsole(transcriptWriter)
 	globals["Console"] = console
-	globals["Transcript"] = console
+	globals["Transcript"] = transcript
 
 	// Array class object
 	globals["Array"] = makeArrayClass()
@@ -40,7 +58,10 @@ func InitialGlobals() map[string]*object.Object {
 // registerBuiltins populates the global environment with built-in objects.
 // This is used by the tree-walking interpreter.
 func registerBuiltins(env *Env) {
-	globals := InitialGlobals()
+	registerBuiltinsWithGlobals(env, InitialGlobals())
+}
+
+func registerBuiltinsWithGlobals(env *Env, globals map[string]*object.Object) {
 	for name, val := range globals {
 		env.Define(name)
 		env.Set(name, val)
@@ -61,27 +82,41 @@ func displayString(o *object.Object) string {
 	return o.PrintString()
 }
 
-func makeConsole() *object.Object {
+func makeConsole(writer io.Writer) *object.Object {
 	o := &object.Object{
 		Kind:    object.KindObject,
 		Slots:   make(map[string]*object.Object),
 		Methods: make(map[string]*object.MethodDef),
 	}
+	printSink := func(s string) {
+		if writer != nil {
+			_, _ = io.WriteString(writer, s)
+			return
+		}
+		fmt.Print(s)
+	}
+	printlnSink := func(s string) {
+		if writer != nil {
+			_, _ = io.WriteString(writer, s+"\n")
+			return
+		}
+		fmt.Println(s)
+	}
 	o.Methods["print:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
 		if len(args) > 0 {
-			fmt.Print(displayString(args[0]))
+			printSink(displayString(args[0]))
 		}
 		return object.Nil, nil
 	}}
 	o.Methods["println:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
 		if len(args) > 0 {
-			fmt.Println(displayString(args[0]))
+			printlnSink(displayString(args[0]))
 		}
 		return object.Nil, nil
 	}}
 	o.Methods["show:"] = o.Methods["println:"]
 	o.Methods["nl"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
-		fmt.Println()
+		printlnSink("")
 		return object.Nil, nil
 	}}
 	return o
