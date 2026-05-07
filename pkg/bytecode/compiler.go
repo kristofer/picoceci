@@ -29,6 +29,7 @@ type Compiler struct {
 	// Module loading support
 	moduleLoader ModuleLoader                // optional module loader
 	globals      map[string]*object.Object   // accumulated globals from imports
+	objectTemplates map[string]*ast.ObjectDecl // templates for compose support
 }
 
 // NewCompiler creates a new compiler.
@@ -38,6 +39,7 @@ func NewCompiler() *Compiler {
 		scope:   newScope(nil),
 		blocks:  make([]*CompiledBlock, 0),
 		globals: make(map[string]*object.Object),
+		objectTemplates: make(map[string]*ast.ObjectDecl),
 	}
 }
 
@@ -129,8 +131,7 @@ func (c *Compiler) compileNode(node ast.Node) error {
 	case *ast.Cascade:
 		return c.compileCascade(n)
 	case *ast.ObjectDecl:
-		// Object declarations are handled at the top level
-		return nil
+		return c.compileObjectDecl(n)
 	case *ast.InterfaceDecl:
 		// Interface declarations are recorded for type checking
 		return nil
@@ -264,14 +265,14 @@ func (c *Compiler) compileIdent(n *ast.Ident) error {
 
 	// Try instance variable (if in method context)
 	if c.isMethod {
-		for i, slotName := range c.selfSlotNames {
+		for _, slotName := range c.selfSlotNames {
 			if slotName == n.Name {
-				idx := c.chunk.AddConstant(object.StringObject(n.Name))
+				idx := c.chunk.AddConstant(object.StringObject(slotName))
 				if idx < 0 {
 					return fmt.Errorf("constant pool overflow")
 				}
 				c.emitOp(OpPushInst, n.Pos.Line)
-				c.chunk.WriteUint16(uint16(i), n.Pos.Line)
+				c.chunk.WriteUint16(uint16(idx), n.Pos.Line)
 				return nil
 			}
 		}
@@ -388,10 +389,14 @@ func (c *Compiler) compileAssign(n *ast.Assign) error {
 
 	// Check instance variable
 	if c.isMethod {
-		for i, slotName := range c.selfSlotNames {
+		for _, slotName := range c.selfSlotNames {
 			if slotName == n.Name {
+				idx := c.chunk.AddConstant(object.StringObject(slotName))
+				if idx < 0 {
+					return fmt.Errorf("constant pool overflow")
+				}
 				c.emitOp(OpStoreInst, n.Pos.Line)
-				c.chunk.WriteUint16(uint16(i), n.Pos.Line)
+				c.chunk.WriteUint16(uint16(idx), n.Pos.Line)
 				return nil
 			}
 		}
@@ -612,12 +617,147 @@ func (c *Compiler) compileAnonObject(n *ast.AnonObjectLit) error {
 	return nil
 }
 
+func (c *Compiler) compileObjectDecl(decl *ast.ObjectDecl) error {
+	// Save template for composition lookup.
+	c.objectTemplates[decl.Name] = decl
+
+	// Collect slots and methods from all composed objects (in declaration order).
+	allSlots := make([]string, 0)
+	allSlotTypes := make(map[string]string)
+	composedMethods := make(map[string]*object.MethodDef)
+
+	for _, composeName := range decl.Composes {
+		if composeDecl, ok := c.objectTemplates[composeName]; ok {
+			allSlots = append(allSlots, composeDecl.Slots...)
+			for i, slot := range composeDecl.Slots {
+				if i < len(composeDecl.SlotTypes) {
+					allSlotTypes[slot] = composeDecl.SlotTypes[i]
+				} else {
+					allSlotTypes[slot] = "Any"
+				}
+			}
+		}
+
+		if composeFactory, ok := c.globals[composeName]; ok {
+			for sel, m := range composeFactory.Methods {
+				if sel != "new" {
+					composedMethods[sel] = m
+				}
+			}
+			if composeFactory.SlotTypes != nil {
+				for slot, typeName := range composeFactory.SlotTypes {
+					allSlotTypes[slot] = typeName
+					if !containsString(allSlots, slot) {
+						allSlots = append(allSlots, slot)
+					}
+				}
+			}
+		}
+	}
+
+	// Own slots come after composed slots; own slot types override composed ones.
+	allSlots = append(allSlots, decl.Slots...)
+	for i, slot := range decl.Slots {
+		if i < len(decl.SlotTypes) {
+			allSlotTypes[slot] = decl.SlotTypes[i]
+		} else {
+			allSlotTypes[slot] = "Any"
+		}
+	}
+
+	factory := &object.Object{
+		Kind:            object.KindObject,
+		Slots:           make(map[string]*object.Object),
+		SlotTypes:       allSlotTypes,
+		Methods:         make(map[string]*object.MethodDef),
+		ComposedMethods: composedMethods,
+	}
+
+	for sel, m := range composedMethods {
+		factory.Methods[sel] = m
+	}
+
+	for _, mdef := range decl.Methods {
+		mdef := mdef
+		compiled, err := c.CompileMethod(mdef, allSlots)
+		if err != nil {
+			return fmt.Errorf("compile method %s>>%s: %w", decl.Name, mdef.Selector, err)
+		}
+		factory.Methods[mdef.Selector] = &object.MethodDef{
+			Selector:   mdef.Selector,
+			Params:     mdef.Params,
+			Locals:     mdef.Locals,
+			LocalTypes: mdef.LocalTypes,
+			Body:       compiled,
+		}
+	}
+
+	capturedSlots := append([]string(nil), allSlots...)
+	factory.Methods["new"] = &object.MethodDef{
+		Selector: "new",
+		Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+			inst := &object.Object{
+				Kind:            object.KindObject,
+				Slots:           make(map[string]*object.Object),
+				SlotTypes:       self.SlotTypes,
+				Methods:         self.Methods,
+				ComposedMethods: self.ComposedMethods,
+			}
+			for _, slot := range capturedSlots {
+				typeName := "Any"
+				if self.SlotTypes != nil {
+					if t, ok := self.SlotTypes[slot]; ok {
+						typeName = t
+					}
+				}
+				inst.Slots[slot] = zeroValueFor(typeName)
+			}
+			return inst, nil
+		},
+	}
+
+	c.globals[decl.Name] = factory
+	return nil
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func zeroValueFor(typeName string) *object.Object {
+	switch typeName {
+	case "Int":
+		return object.IntObject(0)
+	case "Float":
+		return object.FloatObject(0.0)
+	case "Bool":
+		return object.False
+	case "String":
+		return object.StringObject("")
+	case "Char":
+		return object.CharObject(0)
+	case "Symbol":
+		return object.SymbolObject("")
+	case "ByteArray":
+		return object.ByteArrayObject(nil)
+	case "Array":
+		return object.ArrayObject(0)
+	default:
+		return object.Nil
+	}
+}
+
 // CompileMethod compiles a method definition.
 func (c *Compiler) CompileMethod(method *ast.MethodDef, slotNames []string) (*CompiledBlock, error) {
 	methodCompiler := &Compiler{
 		chunk:         NewChunk(),
 		scope:         newScope(nil),
-		blocks:        make([]*CompiledBlock, 0),
+		blocks:        c.blocks,
 		isMethod:      true,
 		selfSlotNames: slotNames,
 	}
@@ -651,13 +791,18 @@ func (c *Compiler) CompileMethod(method *ast.MethodDef, slotNames []string) (*Co
 		methodCompiler.emitOp(OpReturnSelf, method.Pos.Line)
 	}
 
-	return &CompiledBlock{
+	compiled := &CompiledBlock{
 		Arity:      len(method.Params),
 		LocalCount: methodCompiler.scope.localCount(),
 		Upvalues:   nil, // Methods don't capture upvalues
 		Chunk:      methodCompiler.chunk,
 		Name:       method.Selector,
-	}, nil
+	}
+
+	// Propagate nested block templates compiled inside methods.
+	c.blocks = methodCompiler.blocks
+
+	return compiled, nil
 }
 
 // GetBlocks returns all compiled blocks (for closure creation).

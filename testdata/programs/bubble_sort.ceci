@@ -11,7 +11,8 @@ n := arr size.
 [ swapped := false.
   1 to: n - 1 do: [ :i |
       ((arr at: i) > (arr at: i + 1))
-          ifTrue: [ | t: Any |
+          ifTrue
+          : [ | t: Any |
               t := arr at: i.
               arr at: i put: (arr at: i + 1).
               arr at: i + 1 put: t.

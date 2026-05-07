@@ -17,6 +17,4 @@
 //
 // On TinyGo/ESP32-S3, Console wraps machine.UART0 at 115200 baud.
 // On desktop, Console wraps stdin/stdout for testing.
-//
-// Phase 5 deliverable — see IMPLEMENTATION_PLAN.md.
 package tinygo

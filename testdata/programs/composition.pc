@@ -5,6 +5,11 @@ object Counter {
     inc   [ count := count + 1. ^self ]
     value [ ^count ]
 }
+| c: Counter|
+c := Counter new.
+c inc.
+c inc.
+Console println: c value printString.
 
 object LoggedCounter {
     compose Counter.

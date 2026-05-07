@@ -24,6 +24,7 @@ func runVM(src string) (*object.Object, error) {
 
 	vm := NewVM()
 	vm.SetBlocks(c.GetBlocks())
+	vm.AddGlobals(c.GetGlobals())
 	return vm.Run(chunk)
 }
 
@@ -402,5 +403,54 @@ func TestVMReturn(t *testing.T) {
 	}
 	if result.Kind != object.KindSmallInt || result.IVal != 42 {
 		t.Errorf("expected 42, got %s", result.PrintString())
+	}
+}
+
+func TestVMObjectDeclarationNew(t *testing.T) {
+	result, err := runVM(`object Counter {
+		| count: Int |
+		init [ count := 0 ]
+		inc [ count := count + 1. ^self ]
+		value [ ^count ]
+	}.
+	| c: Counter |
+	c := Counter new.
+	c inc.
+	c inc.
+	c value.`)
+	if err != nil {
+		t.Fatalf("VM error: %v", err)
+	}
+	if result.Kind != object.KindSmallInt || result.IVal != 2 {
+		t.Errorf("expected 2, got %s", result.PrintString())
+	}
+}
+
+func TestVMObjectComposition(t *testing.T) {
+	result, err := runVM(`object Counter {
+		| count: Int |
+		init [ count := 0 ]
+		inc [ count := count + 1. ^self ]
+		value [ ^count ]
+	}.
+
+	object LoggedCounter {
+		compose Counter.
+		inc [
+			count := count + 1.
+			^self
+		]
+	}.
+
+	| c: LoggedCounter |
+	c := LoggedCounter new.
+	c inc.
+	c inc.
+	c value.`)
+	if err != nil {
+		t.Fatalf("VM error: %v", err)
+	}
+	if result.Kind != object.KindSmallInt || result.IVal != 2 {
+		t.Errorf("expected 2, got %s", result.PrintString())
 	}
 }

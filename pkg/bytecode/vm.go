@@ -442,7 +442,21 @@ func (vm *VM) send(selector string, argc int) (*object.Object, error) {
 	// Try object's methods first
 	if recv.Methods != nil {
 		if m, ok := recv.Methods[selector]; ok {
-			return vm.applyMethod(recv, m, args)
+			result, err := vm.applyMethod(recv, m, args)
+			if err != nil {
+				return nil, err
+			}
+
+			// Mirror AST behavior: Name new creates an instance and then invokes init.
+			if selector == "new" && result != nil && result.Kind == object.KindObject {
+				if initMethod, ok := result.Methods["init"]; ok {
+					if _, err := vm.applyMethod(result, initMethod, nil); err != nil {
+						return nil, err
+					}
+				}
+			}
+
+			return result, nil
 		}
 	}
 
@@ -495,10 +509,43 @@ func (vm *VM) applyMethod(self *object.Object, m *object.MethodDef, args []*obje
 		return m.Native(self, args)
 	}
 
-	// For AST-based methods, we'd need to fall back to tree-walking
-	// or have a pre-compiled version. For now, return nil.
-	// In a full implementation, methods would be compiled to bytecode.
-	return object.Nil, nil
+	if block, ok := m.Body.(*CompiledBlock); ok {
+		return vm.callCompiledMethod(self, block, args)
+	}
+
+	return nil, fmt.Errorf("vm: method %q is not compiled to bytecode", m.Selector)
+}
+
+func (vm *VM) callCompiledMethod(self *object.Object, block *CompiledBlock, args []*object.Object) (*object.Object, error) {
+	if block == nil {
+		return object.Nil, nil
+	}
+
+	if len(args) != block.Arity {
+		return nil, &eval.Error{
+			Kind:    "ArgumentError",
+			Message: fmt.Sprintf("wrong number of arguments: expected %d, got %d", block.Arity, len(args)),
+			Pos:     ast.Pos{Line: 1, Col: 1},
+		}
+	}
+
+	for _, arg := range args {
+		vm.push(arg)
+	}
+
+	savedFrameCount := vm.frameCount
+	frame := &vm.frames[vm.frameCount]
+	frame.closure = &Closure{Block: block}
+	frame.ip = 0
+	frame.bp = vm.sp - len(args)
+	frame.selfObj = self
+	vm.frameCount++
+
+	for i := len(args); i < block.LocalCount; i++ {
+		vm.push(object.Nil)
+	}
+
+	return vm.runFrame(savedFrameCount)
 }
 
 // Stack operations
@@ -534,4 +581,13 @@ func (vm *VM) SetGlobal(name string, val *object.Object) {
 func (vm *VM) GetGlobal(name string) (*object.Object, bool) {
 	v, ok := vm.globals[name]
 	return v, ok
+}
+
+// Globals returns a copy of the VM global namespace.
+func (vm *VM) Globals() map[string]*object.Object {
+	out := make(map[string]*object.Object, len(vm.globals))
+	for name, val := range vm.globals {
+		out[name] = val
+	}
+	return out
 }

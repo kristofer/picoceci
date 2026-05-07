@@ -122,3 +122,19 @@ c value.
 		t.Errorf("expected '=> 3' from counter.value, got: %q", out.String())
 	}
 }
+
+// TestREPLVMSingleLine verifies that the VM-backed REPL can evaluate
+// a simple expression on the host.
+func TestREPLVMSingleLine(t *testing.T) {
+	in := strings.NewReader("1 + 2.\n")
+	var out, errOut bytes.Buffer
+
+	runREPLWithVMIO(in, &out, &errOut)
+
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected stderr: %s", errOut.String())
+	}
+	if !strings.Contains(out.String(), "=> 3") {
+		t.Errorf("expected '=> 3' in output, got: %q", out.String())
+	}
+}

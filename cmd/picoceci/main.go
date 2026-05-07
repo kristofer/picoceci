@@ -16,9 +16,11 @@ import (
 	"strings"
 
 	"github.com/kristofer/picoceci/pkg/ast"
+	"github.com/kristofer/picoceci/pkg/bytecode"
 	"github.com/kristofer/picoceci/pkg/eval"
 	"github.com/kristofer/picoceci/pkg/lexer"
 	"github.com/kristofer/picoceci/pkg/module"
+	"github.com/kristofer/picoceci/pkg/object"
 	"github.com/kristofer/picoceci/pkg/parser"
 	"github.com/kristofer/picoceci/pkg/sdcard"
 )
@@ -40,8 +42,16 @@ func main() {
 			os.Exit(1)
 		}
 		runFile(os.Args[2])
+	case "run-vm":
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "usage: picoceci run-vm <file.pc>")
+			os.Exit(1)
+		}
+		runFileVM(os.Args[2])
 	case "repl":
 		runREPL()
+	case "repl-vm":
+		runREPLVM()
 	case "version":
 		fmt.Printf("picoceci %s\n", version)
 	default:
@@ -75,7 +85,9 @@ func printUsage() {
 
 Usage:
   picoceci run <file.pc>    execute a picoceci source file
+	picoceci run-vm <file.pc> execute a picoceci source file via bytecode VM
   picoceci repl             start an interactive REPL
+	picoceci repl-vm          start an interactive REPL via bytecode VM
   picoceci version          print version information
 `, version)
 }
@@ -100,6 +112,20 @@ func runFile(path string) {
 
 	_, err = interp.Eval(prog.Statements)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "picoceci: runtime error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// runFileVM reads, parses, compiles, and executes a .pc source file via bytecode VM.
+func runFileVM(path string) {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "picoceci: %v\n", err)
+		os.Exit(1)
+	}
+
+	if _, err := execSourceVM(string(src), createModuleLoader(), nil); err != nil {
 		fmt.Fprintf(os.Stderr, "picoceci: runtime error: %v\n", err)
 		os.Exit(1)
 	}
@@ -135,6 +161,13 @@ func runREPL() {
 	fmt.Printf("picoceci %s  (type Ctrl-D to exit)\n", version)
 	fmt.Println("  tip: type '---' to enter/exit paste mode for multi-line programs")
 	runREPLWithIO(os.Stdin, os.Stdout, os.Stderr)
+}
+
+// runREPLVM starts a bytecode-VM-backed interactive REPL.
+func runREPLVM() {
+	fmt.Printf("picoceci %s (bytecode VM)  (type Ctrl-D to exit)\n", version)
+	fmt.Println("  tip: type '---' to enter/exit paste mode for multi-line programs")
+	runREPLWithVMIO(os.Stdin, os.Stdout, os.Stderr)
 }
 
 // runREPLWithIO is the testable core of the REPL.
@@ -192,6 +225,59 @@ func runREPLWithIO(r io.Reader, out, errOut io.Writer) {
 	fmt.Fprintln(out)
 }
 
+// runREPLWithVMIO is the bytecode-VM counterpart of runREPLWithIO.
+func runREPLWithVMIO(r io.Reader, out, errOut io.Writer) {
+	loader := createModuleLoader()
+	globals := make(map[string]*object.Object)
+
+	scanner := bufio.NewScanner(r)
+	var buf strings.Builder
+	inPaste := false
+
+	for {
+		if inPaste {
+			fmt.Fprint(out, "... ")
+		} else {
+			fmt.Fprint(out, "picoceci(vm)> ")
+		}
+		if !scanner.Scan() {
+			break
+		}
+		line := scanner.Text()
+
+		// "---" toggles paste mode.
+		if line == "---" {
+			if !inPaste {
+				inPaste = true
+				buf.Reset()
+				fmt.Fprintln(out, "(paste mode on: type '---' to run)")
+			} else {
+				inPaste = false
+				src := buf.String()
+				buf.Reset()
+				if src == "" {
+					continue
+				}
+				execSourceWithVMIO(loader, globals, src, out, errOut)
+			}
+			continue
+		}
+
+		if inPaste {
+			buf.WriteString(line)
+			buf.WriteByte('\n')
+			continue
+		}
+
+		if line == "" {
+			continue
+		}
+
+		execSourceWithVMIO(loader, globals, line, out, errOut)
+	}
+	fmt.Fprintln(out)
+}
+
 // evalSourceWithIO parses and evaluates src, writing results to out and
 // errors to errOut.
 func evalSourceWithIO(interp *eval.Interpreter, src string, out, errOut io.Writer) {
@@ -209,6 +295,51 @@ func evalSourceWithIO(interp *eval.Interpreter, src string, out, errOut io.Write
 	if result != nil {
 		fmt.Fprintln(out, "=>", result.PrintString())
 	}
+}
+
+// execSourceWithVMIO parses, compiles, and executes src with the bytecode VM.
+func execSourceWithVMIO(loader *module.Loader, globals map[string]*object.Object, src string, out, errOut io.Writer) {
+	result, err := execSourceVM(src, loader, globals)
+	if err != nil {
+		fmt.Fprintf(errOut, "error: %v\n", err)
+		return
+	}
+	if result != nil {
+		fmt.Fprintln(out, "=>", result.PrintString())
+	}
+}
+
+func execSourceVM(src string, loader *module.Loader, globals map[string]*object.Object) (*object.Object, error) {
+	prog, err := parseSource([]byte(src))
+	if err != nil {
+		return nil, fmt.Errorf("parse error: %w", err)
+	}
+
+	c := bytecode.NewCompilerWithLoader(loader)
+	chunk, err := c.Compile(prog.Statements)
+	if err != nil {
+		return nil, fmt.Errorf("compile error: %w", err)
+	}
+
+	vm := bytecode.NewVM()
+	vm.SetBlocks(c.GetBlocks())
+	if globals != nil {
+		vm.AddGlobals(globals)
+	}
+	vm.AddGlobals(c.GetGlobals())
+
+	result, err := vm.Run(chunk)
+	if err != nil {
+		return nil, err
+	}
+
+	if globals != nil {
+		for name, val := range vm.Globals() {
+			globals[name] = val
+		}
+	}
+
+	return result, nil
 }
 
 // parseSource tokenises and parses src, returning the AST or an error.
