@@ -28,9 +28,9 @@ func (e *Error) Error() string {
 // When selfObj is non-nil, slot names in selfObj.Slots are visible as variables.
 type Env struct {
 	vars            map[string]*object.Object
-	types           map[string]string           // declared type for each variable in this scope
+	types           map[string]string // declared type for each variable in this scope
 	outer           *Env
-	selfObj         *object.Object              // non-nil in method environments
+	selfObj         *object.Object               // non-nil in method environments
 	composedMethods map[string]*object.MethodDef // for super dispatch in method envs
 }
 
@@ -258,7 +258,6 @@ func kindTypeName(val *object.Object) string {
 	}
 	return "Unknown"
 }
-
 
 // EvalModuleLoader is an interface for loading modules in the interpreter.
 // It is implemented by module.Loader to break the import cycle.
