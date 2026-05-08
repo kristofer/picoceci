@@ -2,6 +2,7 @@ package bytecode
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/kristofer/picoceci/pkg/ast"
 	"github.com/kristofer/picoceci/pkg/eval"
@@ -55,6 +56,12 @@ func NewVM() *VM {
 // NewVMWithSinks creates a VM with configurable Console/Transcript sinks.
 func NewVMWithSinks(sinks eval.GlobalSinks) *VM {
 	return NewVMWithGlobals(eval.InitialGlobalsWithSinks(sinks))
+}
+
+// NewVMWithTranscript creates a VM whose Transcript object writes to writer.
+// Console keeps its default sink behavior.
+func NewVMWithTranscript(writer io.Writer) *VM {
+	return NewVMWithSinks(eval.GlobalSinks{TranscriptWriter: writer})
 }
 
 // NewVMWithGlobals creates a VM with an explicit global namespace.
