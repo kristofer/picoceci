@@ -15,21 +15,21 @@ This document breaks the picoceci implementation into discrete, independently-de
 The following milestones have been implemented and verified with `go test ./...`:
 
 - Host runtime now supports both execution engines side-by-side:
-    - `picoceci run` / `picoceci repl` (AST tree-walking interpreter)
-    - `picoceci run-vm` / `picoceci repl-vm` (bytecode VM)
+  - `picoceci run` / `picoceci repl` (AST tree-walking interpreter)
+  - `picoceci run-vm` / `picoceci repl-vm` (bytecode VM)
 - VM parity work for object semantics landed:
-    - `ObjectDecl` registration now creates factory globals in the bytecode path.
-    - Object methods are compiled to bytecode blocks and executed directly by the VM.
-    - `new` triggers `init` in VM mode, matching tree-walker behavior.
-    - Composition cases such as `LoggedCounter compose Counter` run correctly in VM mode.
+  - `ObjectDecl` registration now creates factory globals in the bytecode path.
+  - Object methods are compiled to bytecode blocks and executed directly by the VM.
+  - `new` triggers `init` in VM mode, matching tree-walker behavior.
+  - Composition cases such as `LoggedCounter compose Counter` run correctly in VM mode.
 - Console/Transcript output routing was split:
-    - `eval.InitialGlobalsWithSinks(...)` supports separate output sinks.
-    - New constructors allow explicit globals/sinks in both interpreter and VM.
-    - Default behavior remains backward-compatible when sinks are not provided.
+  - `eval.InitialGlobalsWithSinks(...)` supports separate output sinks.
+  - New constructors allow explicit globals/sinks in both interpreter and VM.
+  - Default behavior remains backward-compatible when sinks are not provided.
 - TinyGo target wiring updated:
-    - `target/esp32s3/main.go` now creates VM instances with `NewVMWithSinks(...)`.
-    - `Console` is wired to the TinyGo serial console.
-    - `Transcript` is currently wired to a placeholder writer, ready to be replaced by a Canal TCP writer.
+  - `target/esp32s3/main.go` now creates VM instances with `NewVMWithSinks(...)`.
+  - `Console` is wired to the TinyGo serial console.
+  - `Transcript` is currently wired to a placeholder writer, ready to be replaced by a Canal TCP writer.
 
 Next integration step:
 
@@ -480,7 +480,7 @@ func main() {
 ### Inputs
 
 - Phase 5 deliverables
-- Canal repo: https://github.com/kristofer/Canal
+- Canal repo: <https://github.com/kristofer/Canal>
 - `LANGUAGE_SPEC.md` §13.2
 
 ### Deliverables
@@ -499,6 +499,7 @@ cap send: 'hello' asBytes.
 ```
 
 Under the hood:
+
 1. `Canal capability: #uart0` looks up `uart0` in the table, calls Canal's `CapAcquire(id)`.
 2. The returned `Capability` object holds the Canal cap ID.
 3. `cap send: bytes` calls Canal's `CapWrite(id, buf, len)`.

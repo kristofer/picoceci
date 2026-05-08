@@ -74,13 +74,13 @@ picoceci/
 ## Current progress snapshot
 
 - Host supports both engines:
-    - `picoceci run` and `picoceci repl` (AST interpreter)
-    - `picoceci run-vm` and `picoceci repl-vm` (bytecode VM)
+  - `picoceci run` and `picoceci repl` (AST interpreter)
+  - `picoceci run-vm` and `picoceci repl-vm` (bytecode VM)
 - VM parity for object declarations and composed objects is implemented.
 - `Console` and `Transcript` now support separate output sinks.
 - TinyGo target now constructs VM with sink-aware globals:
-    - `Console` -> serial console
-    - `Transcript` -> placeholder sink (ready to swap for Canal TCP writer)
+  - `Console` -> serial console
+  - `Transcript` -> placeholder sink (ready to swap for Canal TCP writer)
 - Test baseline is green with `go test ./...`.
 
 ## Relation to Canal
