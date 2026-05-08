@@ -10,6 +10,31 @@ Target: TinyGo 0.32+ · ESP32-S3-N16R8 · Canal microkernel
 
 This document breaks the picoceci implementation into discrete, independently-deliverable phases.  Each phase has clearly defined inputs, outputs, acceptance criteria, and suggested implementation notes so that an agent can pick up any phase and deliver it without needing context from other phases (except where noted).
 
+## Recent progress (May 2026)
+
+The following milestones have been implemented and verified with `go test ./...`:
+
+- Host runtime now supports both execution engines side-by-side:
+    - `picoceci run` / `picoceci repl` (AST tree-walking interpreter)
+    - `picoceci run-vm` / `picoceci repl-vm` (bytecode VM)
+- VM parity work for object semantics landed:
+    - `ObjectDecl` registration now creates factory globals in the bytecode path.
+    - Object methods are compiled to bytecode blocks and executed directly by the VM.
+    - `new` triggers `init` in VM mode, matching tree-walker behavior.
+    - Composition cases such as `LoggedCounter compose Counter` run correctly in VM mode.
+- Console/Transcript output routing was split:
+    - `eval.InitialGlobalsWithSinks(...)` supports separate output sinks.
+    - New constructors allow explicit globals/sinks in both interpreter and VM.
+    - Default behavior remains backward-compatible when sinks are not provided.
+- TinyGo target wiring updated:
+    - `target/esp32s3/main.go` now creates VM instances with `NewVMWithSinks(...)`.
+    - `Console` is wired to the TinyGo serial console.
+    - `Transcript` is currently wired to a placeholder writer, ready to be replaced by a Canal TCP writer.
+
+Next integration step:
+
+- Replace the placeholder Transcript writer in `target/esp32s3/main.go` with the Canal TCP session writer so Transcript acts as network standard output while Console stays on USB serial.
+
 ---
 
 ## Repository layout (target)

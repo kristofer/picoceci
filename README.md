@@ -71,6 +71,18 @@ picoceci/
 
 **v2** — typed variable declarations are now required.  Every variable must carry an explicit type annotation (`| x: Int |`); bare `| x |` is a parse error.  Use `| x: Any |` to opt into dynamic typing.  See [`docs/TYPED_VARIABLES_PLAN.md`](docs/TYPED_VARIABLES_PLAN.md) for the full design rationale and implementation plan.
 
+## Current progress snapshot
+
+- Host supports both engines:
+    - `picoceci run` and `picoceci repl` (AST interpreter)
+    - `picoceci run-vm` and `picoceci repl-vm` (bytecode VM)
+- VM parity for object declarations and composed objects is implemented.
+- `Console` and `Transcript` now support separate output sinks.
+- TinyGo target now constructs VM with sink-aware globals:
+    - `Console` -> serial console
+    - `Transcript` -> placeholder sink (ready to swap for Canal TCP writer)
+- Test baseline is green with `go test ./...`.
+
 ## Relation to Canal
 
 picoceci is intended to run as a user-space scripting layer on top of the Canal capability microkernel.  Canal provides isolated capability objects; picoceci objects map naturally onto Canal capabilities, letting scripts safely compose and invoke kernel services without raw pointer access.
