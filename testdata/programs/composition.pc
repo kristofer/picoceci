@@ -9,7 +9,7 @@ object Counter {
 c := Counter new.
 c inc.
 c inc.
-Console println: c value printString.
+Transcript println: c value printString.
 
 object LoggedCounter {
     compose Counter.
