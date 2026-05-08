@@ -25,7 +25,7 @@ import (
 	"github.com/kristofer/picoceci/pkg/sdcard"
 )
 
-const version = "0.1.0-dev"
+const version = "0.2.0-dev"
 
 func main() {
 	// Initialize SD card stub for desktop (maps /sdcard/ to ./testdata/sdcard/)

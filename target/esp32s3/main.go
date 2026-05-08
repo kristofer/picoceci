@@ -27,7 +27,7 @@ import (
 	"github.com/kristofer/picoceci/pkg/tinygo"
 )
 
-const version = "0.1.0-dev"
+const version = "0.2.0-dev"
 
 // transcriptPlaceholder is a temporary Transcript sink.
 // Replace this writer with a Canal TCP session writer when ready.
