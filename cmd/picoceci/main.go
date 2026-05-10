@@ -125,7 +125,7 @@ func runFileVM(path string) {
 		os.Exit(1)
 	}
 
-	if _, err := execSourceVM(string(src), createModuleLoader(), nil); err != nil {
+	if _, err := execSourceVM(string(src), createModuleLoader(), nil, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "picoceci: runtime error: %v\n", err)
 		os.Exit(1)
 	}
@@ -229,6 +229,7 @@ func runREPLWithIO(r io.Reader, out, errOut io.Writer) {
 func runREPLWithVMIO(r io.Reader, out, errOut io.Writer) {
 	loader := createModuleLoader()
 	globals := make(map[string]*object.Object)
+	blocks := make([]*bytecode.CompiledBlock, 0)
 
 	scanner := bufio.NewScanner(r)
 	var buf strings.Builder
@@ -258,7 +259,7 @@ func runREPLWithVMIO(r io.Reader, out, errOut io.Writer) {
 				if src == "" {
 					continue
 				}
-				execSourceWithVMIO(loader, globals, src, out, errOut)
+				execSourceWithVMIO(loader, globals, &blocks, src, out, errOut)
 			}
 			continue
 		}
@@ -273,7 +274,7 @@ func runREPLWithVMIO(r io.Reader, out, errOut io.Writer) {
 			continue
 		}
 
-		execSourceWithVMIO(loader, globals, line, out, errOut)
+		execSourceWithVMIO(loader, globals, &blocks, line, out, errOut)
 	}
 	fmt.Fprintln(out)
 }
@@ -298,8 +299,8 @@ func evalSourceWithIO(interp *eval.Interpreter, src string, out, errOut io.Write
 }
 
 // execSourceWithVMIO parses, compiles, and executes src with the bytecode VM.
-func execSourceWithVMIO(loader *module.Loader, globals map[string]*object.Object, src string, out, errOut io.Writer) {
-	result, err := execSourceVM(src, loader, globals)
+func execSourceWithVMIO(loader *module.Loader, globals map[string]*object.Object, blocks *[]*bytecode.CompiledBlock, src string, out, errOut io.Writer) {
+	result, err := execSourceVM(src, loader, globals, blocks)
 	if err != nil {
 		fmt.Fprintf(errOut, "error: %v\n", err)
 		return
@@ -309,13 +310,19 @@ func execSourceWithVMIO(loader *module.Loader, globals map[string]*object.Object
 	}
 }
 
-func execSourceVM(src string, loader *module.Loader, globals map[string]*object.Object) (*object.Object, error) {
+func execSourceVM(src string, loader *module.Loader, globals map[string]*object.Object, blocks *[]*bytecode.CompiledBlock) (*object.Object, error) {
 	prog, err := parseSource([]byte(src))
 	if err != nil {
 		return nil, fmt.Errorf("parse error: %w", err)
 	}
 
 	c := bytecode.NewCompilerWithLoader(loader)
+	if blocks != nil {
+		c.SetBlocks(*blocks)
+	}
+	if globals != nil {
+		c.SetTopLevelVarsAreGlobals(true)
+	}
 	chunk, err := c.Compile(prog.Statements)
 	if err != nil {
 		return nil, fmt.Errorf("compile error: %w", err)
@@ -337,6 +344,9 @@ func execSourceVM(src string, loader *module.Loader, globals map[string]*object.
 		for name, val := range vm.Globals() {
 			globals[name] = val
 		}
+	}
+	if blocks != nil {
+		*blocks = c.GetBlocks()
 	}
 
 	return result, nil

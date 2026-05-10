@@ -9,16 +9,16 @@ arr at: 5 put: 22.
 arr at: 6 put: 11.
 n := arr size.
 [ swapped := false.
-  1 to: n - 1 do: [ :i |
+  1 to: (n - 1) do: [ :i |
       ((arr at: i) > (arr at: i + 1))
-          ifTrue
-          : [ | t: Any |
+          ifTrue: [ | t: Int |
               t := arr at: i.
               arr at: i put: (arr at: i + 1).
               arr at: i + 1 put: t.
-              swapped := true
+              swapped := true.
+              Transcript println: arr printString.
           ]
   ].
   swapped ] whileTrue.
-Console println: arr printString.
+Transcript println: arr printString.
 "Expected: (11 12 22 25 34 64 )"

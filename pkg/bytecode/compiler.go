@@ -18,9 +18,10 @@ type ModuleLoader interface {
 
 // Compiler compiles AST nodes to bytecode.
 type Compiler struct {
-	chunk  *Chunk           // current chunk being compiled
-	scope  *scope           // current scope
-	blocks []*CompiledBlock // compiled blocks (for closures)
+	chunk                  *Chunk           // current chunk being compiled
+	scope                  *scope           // current scope
+	blocks                 []*CompiledBlock // compiled blocks (for closures)
+	topLevelVarsAreGlobals bool
 
 	// For method compilation
 	isMethod      bool
@@ -48,6 +49,20 @@ func NewCompilerWithLoader(loader ModuleLoader) *Compiler {
 	c := NewCompiler()
 	c.moduleLoader = loader
 	return c
+}
+
+// SetBlocks seeds the compiler with an existing compiled block table.
+// This is used by the VM REPL so persisted closures can continue to create
+// nested block literals across separate commands.
+func (c *Compiler) SetBlocks(blocks []*CompiledBlock) {
+	c.blocks = append([]*CompiledBlock(nil), blocks...)
+}
+
+// SetTopLevelVarsAreGlobals controls whether top-level variable declarations
+// should populate the compiler global namespace instead of the main frame locals.
+// This is used by the VM REPL so declarations persist across commands.
+func (c *Compiler) SetTopLevelVarsAreGlobals(enabled bool) {
+	c.topLevelVarsAreGlobals = enabled
 }
 
 // Compile compiles a program (list of statements) into a Chunk.
@@ -359,6 +374,19 @@ func (c *Compiler) compileBlock(n *ast.Block) error {
 }
 
 func (c *Compiler) compileVarDecl(n *ast.VarDecl) error {
+	if c.topLevelVarsAreGlobals && c.scope.depth == 0 && !c.isMethod {
+		for i, name := range n.Names {
+			typeName := "Any"
+			if i < len(n.Types) {
+				typeName = n.Types[i]
+			}
+			if _, exists := c.globals[name]; !exists {
+				c.globals[name] = zeroValueFor(typeName)
+			}
+		}
+		return nil
+	}
+
 	for _, name := range n.Names {
 		c.scope.declareLocal(name)
 	}

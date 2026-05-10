@@ -138,3 +138,33 @@ func TestREPLVMSingleLine(t *testing.T) {
 		t.Errorf("expected '=> 3' in output, got: %q", out.String())
 	}
 }
+
+func TestREPLVMPasteRecursiveBlockThenInvoke(t *testing.T) {
+	input := strings.Join([]string{
+		"---",
+		"| fact: Any |",
+		"fact := [ :n |",
+		"    (n <= 1)",
+		"        ifTrue:  [ 1 ]",
+		"        ifFalse: [ n * (fact value: n - 1) ]",
+		"].",
+		"---",
+		"fact value: 10.",
+		"",
+	}, "\n")
+
+	in := strings.NewReader(input)
+	var out, errOut bytes.Buffer
+
+	runREPLWithVMIO(in, &out, &errOut)
+
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected stderr: %s", errOut.String())
+	}
+	if !strings.Contains(out.String(), "=> a BlockClosure") {
+		t.Fatalf("expected block closure result after paste, got: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "=> 3628800") {
+		t.Errorf("expected '=> 3628800' after invoking fact, got: %q", out.String())
+	}
+}

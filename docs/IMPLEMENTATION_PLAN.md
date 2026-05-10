@@ -333,6 +333,25 @@ Tree-walking requires keeping the full AST in RAM.  On an ESP32-S3-N16R8 with 8 
 - All Phase 2 test programs must produce identical output when run under the VM
 - Memory: no leak on programs with cycles (verify with leak checker)
 
+### Incremental REPL VM compile note
+
+When embedding a VM-backed REPL that compiles each input independently (for example,
+Canal-side `evalREPLSource`), keep VM block/global state stable across inputs.
+
+Required call order per input:
+
+1. Compile with a fresh compiler (`c := bytecode.NewCompilerWithLoader(...)`).
+2. Append compiler blocks into the persistent VM and rewrite closure indices in the
+  just-compiled chunk: `vm.AddBlocksAndAdjustChunk(chunk, c.GetBlocks())`.
+3. Merge prior REPL globals and newly declared globals:
+  `vm.AddGlobals(replGlobals)` then `vm.AddGlobals(c.GetGlobals())`.
+4. Run chunk.
+5. Persist globals for next input: `replGlobals = vm.Globals()`.
+
+Do not replace VM blocks with only the latest compiler block slice unless the compiler
+was seeded with prior blocks. Replacing can invalidate closure block indices captured
+by earlier inputs.
+
 ---
 
 ## Phase 4 — Module System

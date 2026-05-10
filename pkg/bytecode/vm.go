@@ -2,7 +2,6 @@ package bytecode
 
 import (
 	"fmt"
-	"io"
 
 	"github.com/kristofer/picoceci/pkg/ast"
 	"github.com/kristofer/picoceci/pkg/eval"
@@ -58,12 +57,6 @@ func NewVMWithSinks(sinks eval.GlobalSinks) *VM {
 	return NewVMWithGlobals(eval.InitialGlobalsWithSinks(sinks))
 }
 
-// NewVMWithTranscript creates a VM whose Transcript object writes to writer.
-// Console keeps its default sink behavior.
-func NewVMWithTranscript(writer io.Writer) *VM {
-	return NewVMWithSinks(eval.GlobalSinks{TranscriptWriter: writer})
-}
-
 // NewVMWithGlobals creates a VM with an explicit global namespace.
 func NewVMWithGlobals(globals map[string]*object.Object) *VM {
 	copiedGlobals := make(map[string]*object.Object, len(globals))
@@ -82,6 +75,78 @@ func NewVMWithGlobals(globals map[string]*object.Object) *VM {
 // SetBlocks sets the compiled block templates for closure creation.
 func (vm *VM) SetBlocks(blocks []*CompiledBlock) {
 	vm.blocks = blocks
+}
+
+// AddBlocks appends compiled block templates and returns the base index
+// where the appended block segment starts.
+func (vm *VM) AddBlocks(blocks []*CompiledBlock) int {
+	base := len(vm.blocks)
+	vm.blocks = append(vm.blocks, blocks...)
+	return base
+}
+
+// AddBlocksAndAdjustChunk appends blocks and rewrites OpClosure indices in
+// chunk (and in the appended blocks) by the append base offset.
+//
+// Use this when compiling incrementally from a fresh compiler without seeding
+// prior block templates into the compiler. It keeps previously persisted
+// closures valid while making the newly compiled chunk point at the appended
+// block segment.
+func (vm *VM) AddBlocksAndAdjustChunk(chunk *Chunk, blocks []*CompiledBlock) error {
+	if len(blocks) == 0 {
+		return nil
+	}
+
+	base := vm.AddBlocks(blocks)
+	if base == 0 {
+		return nil
+	}
+
+	if err := adjustClosureIndices(chunk, base); err != nil {
+		return err
+	}
+	for _, blk := range blocks {
+		if blk == nil || blk.Chunk == nil {
+			continue
+		}
+		if err := adjustClosureIndices(blk.Chunk, base); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func adjustClosureIndices(chunk *Chunk, base int) error {
+	if chunk == nil {
+		return nil
+	}
+
+	for offset := 0; offset < len(chunk.Code); {
+		op := OpCode(chunk.Code[offset])
+		instLen := op.InstructionLength()
+		if instLen <= 0 {
+			return fmt.Errorf("invalid instruction length at offset %d", offset)
+		}
+		if offset+instLen > len(chunk.Code) {
+			return fmt.Errorf("truncated instruction %s at offset %d", op.String(), offset)
+		}
+
+		if op == OpClosure {
+			idxOffset := offset + 1
+			idx := int(chunk.ReadUint16(idxOffset))
+			newIdx := idx + base
+			if newIdx < 0 || newIdx > 0xFFFF {
+				return fmt.Errorf("closure block index overflow: %d + %d", idx, base)
+			}
+			chunk.Code[idxOffset] = byte(uint16(newIdx) >> 8)
+			chunk.Code[idxOffset+1] = byte(uint16(newIdx))
+		}
+
+		offset += instLen
+	}
+
+	return nil
 }
 
 // AddGlobals merges additional globals into the VM's global namespace.

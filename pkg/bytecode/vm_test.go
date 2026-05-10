@@ -215,6 +215,75 @@ func TestVMIfTrue(t *testing.T) {
 	}
 }
 
+func TestVMAddBlocksAndAdjustChunk_IncrementalCompile(t *testing.T) {
+	compile := func(src string) (*Chunk, []*CompiledBlock, map[string]*object.Object, error) {
+		l := lexer.NewString(src)
+		p := parser.New(l)
+		prog, err := p.ParseProgram()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		c := NewCompiler()
+		chunk, err := c.Compile(prog.Statements)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		return chunk, c.GetBlocks(), c.GetGlobals(), nil
+	}
+
+	// First input defines a recursive global closure with nested block literals.
+	chunk1, blocks1, globals1, err := compile("fact := [ :n | (n <= 1) ifTrue: [ 1 ] ifFalse: [ n * (fact value: n - 1) ] ].")
+	if err != nil {
+		t.Fatalf("compile1 error: %v", err)
+	}
+
+	vm := NewVM()
+	vm.SetBlocks(blocks1)
+	vm.AddGlobals(globals1)
+	if _, err := vm.Run(chunk1); err != nil {
+		t.Fatalf("run1 error: %v", err)
+	}
+
+	// Second input is compiled from a fresh compiler and contains new closures.
+	chunk2, blocks2, globals2, err := compile("[ :x | x + 1 ] value: 41.")
+	if err != nil {
+		t.Fatalf("compile2 error: %v", err)
+	}
+
+	if err := vm.AddBlocksAndAdjustChunk(chunk2, blocks2); err != nil {
+		t.Fatalf("AddBlocksAndAdjustChunk error: %v", err)
+	}
+	vm.AddGlobals(globals2)
+
+	res2, err := vm.Run(chunk2)
+	if err != nil {
+		t.Fatalf("run2 error: %v", err)
+	}
+	if res2.Kind != object.KindSmallInt || res2.IVal != 42 {
+		t.Fatalf("expected 42 from second input, got %s", res2.PrintString())
+	}
+
+	// Third input calls the old recursive closure; old block indices must still work.
+	chunk3, blocks3, globals3, err := compile("fact value: 10.")
+	if err != nil {
+		t.Fatalf("compile3 error: %v", err)
+	}
+	if err := vm.AddBlocksAndAdjustChunk(chunk3, blocks3); err != nil {
+		t.Fatalf("AddBlocksAndAdjustChunk (third input) error: %v", err)
+	}
+	vm.AddGlobals(globals3)
+
+	res3, err := vm.Run(chunk3)
+	if err != nil {
+		t.Fatalf("run3 error: %v", err)
+	}
+	if res3.Kind != object.KindSmallInt || res3.IVal != 3628800 {
+		t.Fatalf("expected 3628800 from fact value: 10, got %s", res3.PrintString())
+	}
+}
+
 func TestVMIfFalse(t *testing.T) {
 	result, err := runVM("false ifFalse: [ 42 ].")
 	if err != nil {
