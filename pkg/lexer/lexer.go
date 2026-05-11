@@ -24,15 +24,15 @@ type Kind uint8
 
 const (
 	// Literals
-	INTEGER    Kind = iota // 42  16rFF  2r1010
-	FLOAT                  // 3.14  1.5e-3
-	STRING                 // 'hello'
-	SYMBOL                 // #hello  #at:put:
-	CHARACTER              // $A  $\n
-	BYTEARRAY              // #[ 1 2 3 ]  (the whole literal)
-	ARRAYOPEN              // #(
-	BOOLLIT                // true / false (reserved word)
-	NILLIT                 // nil (reserved word)
+	INTEGER   Kind = iota // 42  16rFF  2r1010
+	FLOAT                 // 3.14  1.5e-3
+	STRING                // 'hello'
+	SYMBOL                // #hello  #at:put:
+	CHARACTER             // $A  $\n
+	BYTEARRAY             // #[ 1 2 3 ]  (the whole literal)
+	ARRAYOPEN             // #(
+	BOOLLIT               // true / false (reserved word)
+	NILLIT                // nil (reserved word)
 
 	// Names
 	IDENTIFIER // counter  Counter  x
@@ -131,7 +131,7 @@ func (l *Lexer) Next() Token {
 	ch := l.src[l.pos]
 
 	switch {
-	case ch == '\'' :
+	case ch == '\'':
 		return l.readString()
 	case ch == '$':
 		return l.readCharacter()
@@ -408,8 +408,15 @@ func (l *Lexer) readIdentifierOrKeyword() Token {
 
 func (l *Lexer) readBinOp() Token {
 	start := l.pos
+	if l.pos+1 < len(l.src) {
+		switch string(l.src[l.pos : l.pos+2]) {
+		case "<<", ">>", "<-":
+			l.advance()
+			l.advance()
+			return Token{Kind: BINOP, Literal: string(l.src[start:l.pos]), Line: l.line, Col: l.col}
+		}
+	}
 	for l.pos < len(l.src) && isBinChar(l.src[l.pos]) {
-		// special: don't consume '->' or '>>' as single op if not intended
 		l.advance()
 	}
 	return Token{Kind: BINOP, Literal: string(l.src[start:l.pos]), Line: l.line, Col: l.col}

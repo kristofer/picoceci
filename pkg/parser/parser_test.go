@@ -168,6 +168,17 @@ func TestParser_MultipleTypedChannelsDecl(t *testing.T) {
 	}
 }
 
+func TestParser_NestedGenericTypeVarDecl(t *testing.T) {
+	prog := parse(t, "| pipeline: Container<<Queue<<Int>>>> |")
+	decl, ok := prog.Statements[0].(*ast.VarDecl)
+	if !ok {
+		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+	}
+	if len(decl.Types) != 1 || decl.Types[0] != "Container<<Queue<<Int>>>>" {
+		t.Fatalf("types: got %v, want [Container<<Queue<<Int>>>>]", decl.Types)
+	}
+}
+
 func TestParser_VarDecl(t *testing.T) {
 	prog := parse(t, "| x: Int  y: Float  z: Any |")
 	vd, ok := prog.Statements[0].(*ast.VarDecl)
