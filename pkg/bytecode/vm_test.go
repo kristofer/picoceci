@@ -108,6 +108,16 @@ func TestVMIntAddition(t *testing.T) {
 	}
 }
 
+func TestVMChannelRoundTrip(t *testing.T) {
+	result, err := runVM("| ch: Channel<<Float>> | ch := Channel new: 2. ch <- 3.14. <-ch.")
+	if err != nil {
+		t.Fatalf("VM error: %v", err)
+	}
+	if result.Kind != object.KindFloat || result.FVal != 3.14 {
+		t.Errorf("expected 3.14, got %s", result.PrintString())
+	}
+}
+
 func TestVMIntSubtraction(t *testing.T) {
 	result, err := runVM("10 - 4.")
 	if err != nil {

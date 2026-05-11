@@ -101,6 +101,13 @@ func TestEval_IntAddition(t *testing.T) {
 	}
 }
 
+func TestEval_ChannelRoundTrip(t *testing.T) {
+	obj := evalSrc(t, "| ch: Channel<<Float>> | ch := Channel new: 2. ch <- 3.14. <-ch.")
+	if obj.Kind != object.KindFloat || obj.FVal != 3.14 {
+		t.Errorf("channel round trip: got %v", obj.PrintString())
+	}
+}
+
 func TestEval_IntSubtraction(t *testing.T) {
 	obj := evalSrc(t, "10 - 3.")
 	if obj.IVal != 7 {
@@ -627,67 +634,67 @@ sum.`
 // --- typed variables --------------------------------------------------------
 
 func TestEval_TypedVarDecl_ZeroValues(t *testing.T) {
-// Int zero value is 0
-obj := evalSrc(t, "| x: Int | x.")
-if obj.Kind != object.KindSmallInt || obj.IVal != 0 {
-t.Errorf("Int zero value: got %v, want 0", obj.PrintString())
-}
+	// Int zero value is 0
+	obj := evalSrc(t, "| x: Int | x.")
+	if obj.Kind != object.KindSmallInt || obj.IVal != 0 {
+		t.Errorf("Int zero value: got %v, want 0", obj.PrintString())
+	}
 }
 
 func TestEval_TypedVarDecl_FloatZero(t *testing.T) {
-obj := evalSrc(t, "| x: Float | x.")
-if obj.Kind != object.KindFloat || obj.FVal != 0.0 {
-t.Errorf("Float zero value: got %v, want 0.0", obj.PrintString())
-}
+	obj := evalSrc(t, "| x: Float | x.")
+	if obj.Kind != object.KindFloat || obj.FVal != 0.0 {
+		t.Errorf("Float zero value: got %v, want 0.0", obj.PrintString())
+	}
 }
 
 func TestEval_TypedVarDecl_BoolZero(t *testing.T) {
-obj := evalSrc(t, "| x: Bool | x.")
-if obj != object.False {
-t.Errorf("Bool zero value: got %v, want false", obj.PrintString())
-}
+	obj := evalSrc(t, "| x: Bool | x.")
+	if obj != object.False {
+		t.Errorf("Bool zero value: got %v, want false", obj.PrintString())
+	}
 }
 
 func TestEval_TypedVarDecl_StringZero(t *testing.T) {
-obj := evalSrc(t, "| x: String | x.")
-if obj.Kind != object.KindString || obj.SVal != "" {
-t.Errorf("String zero value: got %v, want empty string", obj.PrintString())
-}
+	obj := evalSrc(t, "| x: String | x.")
+	if obj.Kind != object.KindString || obj.SVal != "" {
+		t.Errorf("String zero value: got %v, want empty string", obj.PrintString())
+	}
 }
 
 func TestEval_TypedVarDecl_AnyIsNil(t *testing.T) {
-obj := evalSrc(t, "| x: Any | x.")
-if !obj.IsNil() {
-t.Errorf("Any zero value: got %v, want nil", obj.PrintString())
-}
+	obj := evalSrc(t, "| x: Any | x.")
+	if !obj.IsNil() {
+		t.Errorf("Any zero value: got %v, want nil", obj.PrintString())
+	}
 }
 
 func TestEval_TypedVar_TypeCheckPasses(t *testing.T) {
-// Assigning correct type should work fine
-obj := evalSrc(t, "| x: Int | x := 42. x.")
-if obj.Kind != object.KindSmallInt || obj.IVal != 42 {
-t.Errorf("typed assignment: got %v, want 42", obj.PrintString())
-}
+	// Assigning correct type should work fine
+	obj := evalSrc(t, "| x: Int | x := 42. x.")
+	if obj.Kind != object.KindSmallInt || obj.IVal != 42 {
+		t.Errorf("typed assignment: got %v, want 42", obj.PrintString())
+	}
 }
 
 func TestEval_TypedVar_TypeCheckFails(t *testing.T) {
-// Assigning wrong type should raise TypeError
-err := evalErr(t, "| x: Int | x := 'hello'.")
-if !strings.Contains(err.Error(), "TypeError") {
-t.Errorf("expected TypeError, got %v", err)
-}
+	// Assigning wrong type should raise TypeError
+	err := evalErr(t, "| x: Int | x := 'hello'.")
+	if !strings.Contains(err.Error(), "TypeError") {
+		t.Errorf("expected TypeError, got %v", err)
+	}
 }
 
 func TestEval_TypedVar_AnyAllowsAnyType(t *testing.T) {
-// Any-typed vars accept any value
-obj := evalSrc(t, "| x: Any | x := 'hello'. x.")
-if obj.Kind != object.KindString || obj.SVal != "hello" {
-t.Errorf("Any typed var: got %v, want 'hello'", obj.PrintString())
-}
+	// Any-typed vars accept any value
+	obj := evalSrc(t, "| x: Any | x := 'hello'. x.")
+	if obj.Kind != object.KindString || obj.SVal != "hello" {
+		t.Errorf("Any typed var: got %v, want 'hello'", obj.PrintString())
+	}
 }
 
 func TestEval_TypedSlot_TypeCheckPasses(t *testing.T) {
-src := `
+	src := `
 object Box {
     | val: Int |
     init  [ val := 0 ]
@@ -698,14 +705,14 @@ object Box {
 b := Box new.
 b set: 99.
 b get.`
-obj := evalSrc(t, src)
-if obj.Kind != object.KindSmallInt || obj.IVal != 99 {
-t.Errorf("typed slot: got %v, want 99", obj.PrintString())
-}
+	obj := evalSrc(t, src)
+	if obj.Kind != object.KindSmallInt || obj.IVal != 99 {
+		t.Errorf("typed slot: got %v, want 99", obj.PrintString())
+	}
 }
 
 func TestEval_TypedSlot_TypeCheckFails(t *testing.T) {
-src := `
+	src := `
 object Box {
     | val: Int |
     init  [ val := 0 ]
@@ -714,15 +721,15 @@ object Box {
 | b: Box |
 b := Box new.
 b set: 'oops'.`
-err := evalErr(t, src)
-if !strings.Contains(err.Error(), "TypeError") {
-t.Errorf("expected TypeError for slot type mismatch, got %v", err)
-}
+	err := evalErr(t, src)
+	if !strings.Contains(err.Error(), "TypeError") {
+		t.Errorf("expected TypeError for slot type mismatch, got %v", err)
+	}
 }
 
 func TestEval_TypedSlot_ZeroValue(t *testing.T) {
-// Float slot zero value is 0.0 (no explicit init needed)
-src := `
+	// Float slot zero value is 0.0 (no explicit init needed)
+	src := `
 object Sensor {
     | temp: Float |
     reading [ ^temp ]
@@ -730,8 +737,8 @@ object Sensor {
 | s: Sensor |
 s := Sensor new.
 s reading.`
-obj := evalSrc(t, src)
-if obj.Kind != object.KindFloat || obj.FVal != 0.0 {
-t.Errorf("Float slot zero value: got %v, want 0.0", obj.PrintString())
-}
+	obj := evalSrc(t, src)
+	if obj.Kind != object.KindFloat || obj.FVal != 0.0 {
+		t.Errorf("Float slot zero value: got %v, want 0.0", obj.PrintString())
+	}
 }

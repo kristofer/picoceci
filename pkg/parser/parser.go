@@ -244,12 +244,8 @@ func (p *Parser) parseVarDecl() *ast.VarDecl {
 		// KEYWORD token has the form "name:" — strip the trailing colon to get the variable name.
 		varName := strings.TrimSuffix(p.cur.Literal, ":")
 		p.advance()
-		// The next token is the type name (IDENTIFIER).
-		var typeName string
-		if p.cur.Kind == lexer.IDENTIFIER {
-			typeName = p.cur.Literal
-			p.advance()
-		} else {
+		typeName, ok := p.parseTypeName()
+		if !ok && typeName == "" {
 			p.errorf("expected type name after %q:, got %q", varName, p.cur.Literal)
 			typeName = "Any"
 		}
@@ -258,6 +254,36 @@ func (p *Parser) parseVarDecl() *ast.VarDecl {
 	}
 	p.expect(lexer.PIPE)
 	return n
+}
+
+func (p *Parser) parseTypeName() (string, bool) {
+	if p.cur.Kind != lexer.IDENTIFIER {
+		return "", false
+	}
+
+	typeName := p.cur.Literal
+	p.advance()
+
+	if p.cur.Kind == lexer.BINOP && p.cur.Literal == "<<" {
+		p.advance()
+		paramType, ok := p.parseTypeName()
+		if !ok {
+			if paramType == "" {
+				p.errorf("expected type parameter after \"<<\" in generic type %q, got %q", typeName, p.cur.Literal)
+			}
+			return typeName, false
+		}
+		typeName += "<<" + paramType
+		if p.cur.Kind == lexer.BINOP && p.cur.Literal == ">>" {
+			typeName += ">>"
+			p.advance()
+		} else {
+			p.errorf("expected \">>\" to close generic type %q, got %q", typeName, p.cur.Literal)
+			return typeName, false
+		}
+	}
+
+	return typeName, true
 }
 
 func (p *Parser) parseStatements(stop lexer.Kind) []ast.Node {
@@ -352,6 +378,13 @@ func (p *Parser) parseUnaryExpr() ast.Node {
 }
 
 func (p *Parser) parsePrimary() ast.Node {
+	if p.cur.Kind == lexer.BINOP && p.cur.Literal == "<-" {
+		n := &ast.UnaryMsg{Pos: pos(p.cur), Selector: "receive"}
+		p.advance()
+		n.Receiver = p.parseUnaryExpr()
+		return n
+	}
+
 	switch p.cur.Kind {
 	case lexer.NILLIT:
 		n := &ast.NilLit{Pos: pos(p.cur)}

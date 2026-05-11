@@ -118,6 +118,67 @@ func TestParser_Assignment(t *testing.T) {
 	}
 }
 
+func TestParser_GenericTypeVarDecl(t *testing.T) {
+	prog := parse(t, "| ch: Channel<<Float>> q: Queue<<Symbol>> |")
+	decl, ok := prog.Statements[0].(*ast.VarDecl)
+	if !ok {
+		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+	}
+	if got, want := decl.Types, []string{"Channel<<Float>>", "Queue<<Symbol>>"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("types: got %v, want %v", got, want)
+	}
+}
+
+func TestParser_ChannelReceiveSugar(t *testing.T) {
+	prog := parse(t, "| v: Float | v := <-ch.")
+	assign, ok := prog.Statements[1].(*ast.Assign)
+	if !ok {
+		t.Fatalf("expected *ast.Assign, got %T", prog.Statements[1])
+	}
+	msg, ok := assign.Value.(*ast.UnaryMsg)
+	if !ok {
+		t.Fatalf("expected receive sugar to parse as *ast.UnaryMsg, got %T", assign.Value)
+	}
+	if msg.Selector != "receive" {
+		t.Fatalf("selector: got %q, want %q", msg.Selector, "receive")
+	}
+	if recv, ok := msg.Receiver.(*ast.Ident); !ok || recv.Name != "ch" {
+		t.Fatalf("receiver: got %T %#v, want Ident(ch)", msg.Receiver, msg.Receiver)
+	}
+}
+
+func TestParser_MultipleTypedChannelsDecl(t *testing.T) {
+	prog := parse(t, "| tempChan: Channel<<Float>> alertChan: Channel<<String>> cmdQueue: Queue<<Symbol>> |")
+	decl, ok := prog.Statements[0].(*ast.VarDecl)
+	if !ok {
+		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+	}
+	wantNames := []string{"tempChan", "alertChan", "cmdQueue"}
+	wantTypes := []string{"Channel<<Float>>", "Channel<<String>>", "Queue<<Symbol>>"}
+	if len(decl.Names) != len(wantNames) || len(decl.Types) != len(wantTypes) {
+		t.Fatalf("got names=%v types=%v, want names=%v types=%v", decl.Names, decl.Types, wantNames, wantTypes)
+	}
+	for i := range wantNames {
+		if decl.Names[i] != wantNames[i] {
+			t.Fatalf("name[%d]: got %q, want %q", i, decl.Names[i], wantNames[i])
+		}
+		if decl.Types[i] != wantTypes[i] {
+			t.Fatalf("type[%d]: got %q, want %q", i, decl.Types[i], wantTypes[i])
+		}
+	}
+}
+
+func TestParser_NestedGenericTypeVarDecl(t *testing.T) {
+	prog := parse(t, "| pipeline: Container<<Queue<<Int>>>> |")
+	decl, ok := prog.Statements[0].(*ast.VarDecl)
+	if !ok {
+		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+	}
+	if len(decl.Types) != 1 || decl.Types[0] != "Container<<Queue<<Int>>>>" {
+		t.Fatalf("types: got %v, want [Container<<Queue<<Int>>>>]", decl.Types)
+	}
+}
+
 func TestParser_VarDecl(t *testing.T) {
 	prog := parse(t, "| x: Int  y: Float  z: Any |")
 	vd, ok := prog.Statements[0].(*ast.VarDecl)
@@ -141,6 +202,15 @@ func TestParser_VarDecl_BareIdentifierError(t *testing.T) {
 	_, err := p.ParseProgram()
 	if err == nil {
 		t.Error("expected parse error for bare identifier in var-decl, got nil")
+	}
+}
+
+func TestParser_VarDecl_GenericMissingTypeError(t *testing.T) {
+	l := lexer.NewString("| ch: Channel<<>> |")
+	p := parser.New(l)
+	_, err := p.ParseProgram()
+	if err == nil {
+		t.Fatal("expected parse error for missing generic parameter type, got nil")
 	}
 }
 
@@ -386,12 +456,19 @@ interface Incrementable {
 		{"do:", "#(1 2 3) do: [ :each | Console println: each printString ]."},
 		{"collect:", "| doubled: Array |\ndoubled := #(1 2 3) collect: [ :each | each * 2 ]."},
 		{"inject:into:", "| sum: Int |\nsum := #(1 2 3) inject: 0 into: [ :acc :each | acc + each ]."},
+		// §10 Concurrency
+		{"task spawn", "| task: Any |\ntask := Task spawn: [ Console println: 'tick'. Task delay: 1000 ].\ntask priority: 2."},
+		{"typed queue", "| q: Queue<<Int>> |\nq := Queue new: 10.\nTask spawn: [ q send: 42. q send: 99 ]."},
+		{"typed channel", "| ch: Channel<<Float>> |\nch := Channel new: 5.\nch <- 3.14.\n| v: Float |\nv := <-ch."},
+		{"multiple typed channels", "| tempChan: Channel<<Float>> alertChan: Channel<<String>> cmdQueue: Queue<<Symbol>> |"},
 		// §8 Blocks
 		{"block two params", "[ :x :y | x + y ]."},
 		{"block closure", "| adder: Any |\nadder := [ :n | [ :x | x + n ] ].\n(adder value: 5) value: 3."},
 		// §9 Error handling
 		{"on:do:", "[ someRiskyOperation ]\n    on: Error\n    do: [ :err | Console println: err messageText ]."},
 		{"ensure:", "[ file read ]\n    ensure: [ file close ]."},
+		// §13 Interop
+		{"canal capability", "| cap: Any |\ncap := Canal capability: #uart0.\ncap send: 'hello\\n' asBytes.\ncap close."},
 		// import
 		{"import", "import 'Counter'."},
 	}
@@ -452,118 +529,118 @@ func TestParser_ThisContext(t *testing.T) {
 // --- typed variable tests ---------------------------------------------------
 
 func TestParser_TypedVarDecl_Single(t *testing.T) {
-prog := parse(t, "| x: Int |")
-vd, ok := prog.Statements[0].(*ast.VarDecl)
-if !ok {
-t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
-}
-if len(vd.Names) != 1 || vd.Names[0] != "x" {
-t.Errorf("names: got %v, want [x]", vd.Names)
-}
-if len(vd.Types) != 1 || vd.Types[0] != "Int" {
-t.Errorf("types: got %v, want [Int]", vd.Types)
-}
+	prog := parse(t, "| x: Int |")
+	vd, ok := prog.Statements[0].(*ast.VarDecl)
+	if !ok {
+		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+	}
+	if len(vd.Names) != 1 || vd.Names[0] != "x" {
+		t.Errorf("names: got %v, want [x]", vd.Names)
+	}
+	if len(vd.Types) != 1 || vd.Types[0] != "Int" {
+		t.Errorf("types: got %v, want [Int]", vd.Types)
+	}
 }
 
 func TestParser_TypedVarDecl_Multiple(t *testing.T) {
-prog := parse(t, "| x: Float  y: Bool  z: String |")
-vd, ok := prog.Statements[0].(*ast.VarDecl)
-if !ok {
-t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
-}
-if len(vd.Names) != 3 {
-t.Fatalf("names: got %d, want 3", len(vd.Names))
-}
-wantTypes := []string{"Float", "Bool", "String"}
-for i, wt := range wantTypes {
-if vd.Types[i] != wt {
-t.Errorf("types[%d]: got %q, want %q", i, vd.Types[i], wt)
-}
-}
+	prog := parse(t, "| x: Float  y: Bool  z: String |")
+	vd, ok := prog.Statements[0].(*ast.VarDecl)
+	if !ok {
+		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+	}
+	if len(vd.Names) != 3 {
+		t.Fatalf("names: got %d, want 3", len(vd.Names))
+	}
+	wantTypes := []string{"Float", "Bool", "String"}
+	for i, wt := range wantTypes {
+		if vd.Types[i] != wt {
+			t.Errorf("types[%d]: got %q, want %q", i, vd.Types[i], wt)
+		}
+	}
 }
 
 func TestParser_TypedVarDecl_AnyType(t *testing.T) {
-prog := parse(t, "| x: Any |")
-vd, ok := prog.Statements[0].(*ast.VarDecl)
-if !ok {
-t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
-}
-if len(vd.Types) != 1 || vd.Types[0] != "Any" {
-t.Errorf("types: got %v, want [Any]", vd.Types)
-}
+	prog := parse(t, "| x: Any |")
+	vd, ok := prog.Statements[0].(*ast.VarDecl)
+	if !ok {
+		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+	}
+	if len(vd.Types) != 1 || vd.Types[0] != "Any" {
+		t.Errorf("types: got %v, want [Any]", vd.Types)
+	}
 }
 
 func TestParser_TypedVarDecl_UserType(t *testing.T) {
-prog := parse(t, "| c: Counter |")
-vd, ok := prog.Statements[0].(*ast.VarDecl)
-if !ok {
-t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
-}
-if len(vd.Types) != 1 || vd.Types[0] != "Counter" {
-t.Errorf("types: got %v, want [Counter]", vd.Types)
-}
+	prog := parse(t, "| c: Counter |")
+	vd, ok := prog.Statements[0].(*ast.VarDecl)
+	if !ok {
+		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+	}
+	if len(vd.Types) != 1 || vd.Types[0] != "Counter" {
+		t.Errorf("types: got %v, want [Counter]", vd.Types)
+	}
 }
 
 func TestParser_TypedObjectSlots(t *testing.T) {
-src := `
+	src := `
 object TempSensor {
     | bus: Any  address: Int  lastC: Float |
     reading [ ^lastC ]
 }`
-prog := parse(t, src)
-decl, ok := prog.Statements[0].(*ast.ObjectDecl)
-if !ok {
-t.Fatalf("expected *ast.ObjectDecl, got %T", prog.Statements[0])
-}
-wantSlots := []string{"bus", "address", "lastC"}
-wantTypes := []string{"Any", "Int", "Float"}
-if len(decl.Slots) != 3 {
-t.Fatalf("slots: got %d, want 3", len(decl.Slots))
-}
-for i := range wantSlots {
-if decl.Slots[i] != wantSlots[i] {
-t.Errorf("slot[%d]: got %q, want %q", i, decl.Slots[i], wantSlots[i])
-}
-if decl.SlotTypes[i] != wantTypes[i] {
-t.Errorf("slot type[%d]: got %q, want %q", i, decl.SlotTypes[i], wantTypes[i])
-}
-}
+	prog := parse(t, src)
+	decl, ok := prog.Statements[0].(*ast.ObjectDecl)
+	if !ok {
+		t.Fatalf("expected *ast.ObjectDecl, got %T", prog.Statements[0])
+	}
+	wantSlots := []string{"bus", "address", "lastC"}
+	wantTypes := []string{"Any", "Int", "Float"}
+	if len(decl.Slots) != 3 {
+		t.Fatalf("slots: got %d, want 3", len(decl.Slots))
+	}
+	for i := range wantSlots {
+		if decl.Slots[i] != wantSlots[i] {
+			t.Errorf("slot[%d]: got %q, want %q", i, decl.Slots[i], wantSlots[i])
+		}
+		if decl.SlotTypes[i] != wantTypes[i] {
+			t.Errorf("slot type[%d]: got %q, want %q", i, decl.SlotTypes[i], wantTypes[i])
+		}
+	}
 }
 
 func TestParser_TypedMethodLocals(t *testing.T) {
-src := `
+	src := `
 object Foo {
     | x: Int |
     compute [ | result: Int | result := x + 1. ^result ]
 }`
-prog := parse(t, src)
-decl, ok := prog.Statements[0].(*ast.ObjectDecl)
-if !ok {
-t.Fatalf("expected *ast.ObjectDecl, got %T", prog.Statements[0])
-}
-if len(decl.Methods) != 1 {
-t.Fatalf("expected 1 method, got %d", len(decl.Methods))
-}
-m := decl.Methods[0]
-if len(m.Locals) != 1 || m.Locals[0] != "result" {
-t.Errorf("locals: got %v, want [result]", m.Locals)
-}
-if len(m.LocalTypes) != 1 || m.LocalTypes[0] != "Int" {
-t.Errorf("local types: got %v, want [Int]", m.LocalTypes)
-}
+	prog := parse(t, src)
+	decl, ok := prog.Statements[0].(*ast.ObjectDecl)
+	if !ok {
+		t.Fatalf("expected *ast.ObjectDecl, got %T", prog.Statements[0])
+	}
+	if len(decl.Methods) != 1 {
+		t.Fatalf("expected 1 method, got %d", len(decl.Methods))
+	}
+	m := decl.Methods[0]
+	if len(m.Locals) != 1 || m.Locals[0] != "result" {
+		t.Errorf("locals: got %v, want [result]", m.Locals)
+	}
+	if len(m.LocalTypes) != 1 || m.LocalTypes[0] != "Int" {
+		t.Errorf("local types: got %v, want [Int]", m.LocalTypes)
+	}
 }
 
 func TestParser_TypedBlockLocals(t *testing.T) {
-src := "[ | x: Float | x + 1.0 ]."
-prog := parse(t, src)
-blk, ok := prog.Statements[0].(*ast.Block)
-if !ok {
-t.Fatalf("expected *ast.Block, got %T", prog.Statements[0])
-}
-if len(blk.Locals) != 1 || blk.Locals[0] != "x" {
-t.Errorf("locals: got %v, want [x]", blk.Locals)
-}
-if len(blk.LocalTypes) != 1 || blk.LocalTypes[0] != "Float" {
-t.Errorf("local types: got %v, want [Float]", blk.LocalTypes)
-}
+	src := "[ | x: Float | x + 1.0 ]."
+	prog := parse(t, src)
+	blk, ok := prog.Statements[0].(*ast.Block)
+	if !ok {
+		t.Fatalf("expected *ast.Block, got %T", prog.Statements[0])
+	}
+	if len(blk.Locals) != 1 || blk.Locals[0] != "x" {
+		t.Errorf("locals: got %v, want [x]", blk.Locals)
+	}
+	if len(blk.LocalTypes) != 1 || blk.LocalTypes[0] != "Float" {
+		t.Errorf("local types: got %v, want [Float]", blk.LocalTypes)
+	}
 }

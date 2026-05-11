@@ -44,6 +44,9 @@ func TestLexer_BasicTokens(t *testing.T) {
 		{"+", lexer.BINOP, "+"},
 		{"<=", lexer.BINOP, "<="},
 		{"~=", lexer.BINOP, "~="},
+		{"<<", lexer.BINOP, "<<"},
+		{">>", lexer.BINOP, ">>"},
+		{"<-", lexer.BINOP, "<-"},
 	}
 
 	for _, tt := range tests {
@@ -117,6 +120,30 @@ func TestLexer_MultipleTokens(t *testing.T) {
 		tok := l.Next()
 		if tok.Kind != k {
 			t.Errorf("expected %v, got %v (lit=%q)", k, tok.Kind, tok.Literal)
+		}
+	}
+}
+
+func TestLexer_NestedGenericTokens(t *testing.T) {
+	l := lexer.NewString("Container<<Queue<<Int>>>>")
+	want := []struct {
+		kind lexer.Kind
+		lit  string
+	}{
+		{lexer.IDENTIFIER, "Container"},
+		{lexer.BINOP, "<<"},
+		{lexer.IDENTIFIER, "Queue"},
+		{lexer.BINOP, "<<"},
+		{lexer.IDENTIFIER, "Int"},
+		{lexer.BINOP, ">>"},
+		{lexer.BINOP, ">>"},
+		{lexer.EOF, ""},
+	}
+
+	for i, tt := range want {
+		tok := l.Next()
+		if tok.Kind != tt.kind || tok.Literal != tt.lit {
+			t.Fatalf("token %d: got (%v, %q), want (%v, %q)", i, tok.Kind, tok.Literal, tt.kind, tt.lit)
 		}
 	}
 }

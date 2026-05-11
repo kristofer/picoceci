@@ -141,6 +141,24 @@ func TestCompileKeywordMessage(t *testing.T) {
 	}
 }
 
+func TestCompileChannelSyntax(t *testing.T) {
+	chunk, err := compileSource("| ch: Channel<<Float>> | ch := Channel new: 2. ch <- 3.14. <-ch.")
+	if err != nil {
+		t.Fatalf("compile error: %v", err)
+	}
+
+	dis := chunk.Disassemble("test")
+	if !strings.Contains(dis, "PUSH_GLOBAL") || !strings.Contains(dis, "'Channel'") {
+		t.Errorf("expected Channel global lookup in disassembly:\n%s", dis)
+	}
+	if !strings.Contains(dis, "SEND") || !strings.Contains(dis, "'<-'") {
+		t.Errorf("expected channel send selector in disassembly:\n%s", dis)
+	}
+	if !strings.Contains(dis, "'receive'") {
+		t.Errorf("expected channel receive selector in disassembly:\n%s", dis)
+	}
+}
+
 func TestCompileVarDecl(t *testing.T) {
 	chunk, err := compileSource("| x: Any | x := 42.")
 	if err != nil {

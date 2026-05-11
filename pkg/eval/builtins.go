@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/kristofer/picoceci/pkg/ast"
+	"github.com/kristofer/picoceci/pkg/freertos"
 	"github.com/kristofer/picoceci/pkg/object"
 )
 
@@ -25,7 +26,7 @@ type GlobalSinks struct {
 }
 
 // InitialGlobals returns a map of global names to their initial values.
-// This includes: nil, true, false, Console, Transcript, Array.
+// This includes: nil, true, false, Console, Transcript, Array, Queue, Channel.
 // Both the tree-walking interpreter and bytecode VM use this.
 func InitialGlobals() map[string]*object.Object {
 	return InitialGlobalsWithSinks(GlobalSinks{})
@@ -51,6 +52,8 @@ func InitialGlobalsWithSinks(sinks GlobalSinks) map[string]*object.Object {
 
 	// Array class object
 	globals["Array"] = makeArrayClass()
+	globals["Queue"] = makeQueueClass()
+	globals["Channel"] = makeChannelClass()
 
 	return globals
 }
@@ -154,6 +157,120 @@ func makeArrayClass() *object.Object {
 		return object.ArrayObject(0), nil
 	}}
 	return o
+}
+
+type queueObjectData struct {
+	queue    freertos.Queue
+	kindName string
+}
+
+func makeQueueClass() *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+	}
+	o.Methods["new:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		return newQueueLikeInstance("Queue", args)
+	}}
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("Queue"), nil
+	}}
+	return o
+}
+
+func makeChannelClass() *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+	}
+	o.Methods["new:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		return newQueueLikeInstance("Channel", args)
+	}}
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("Channel"), nil
+	}}
+	return o
+}
+
+func newQueueLikeInstance(kindName string, args []*object.Object) (*object.Object, error) {
+	capacity := 0
+	if len(args) > 0 && args[0] != nil && args[0].Kind == object.KindSmallInt {
+		if args[0].IVal > 0 && args[0].IVal <= math.MaxInt {
+			capacity = int(args[0].IVal)
+		}
+	}
+
+	inst := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+	}
+	inst.Env = &queueObjectData{
+		queue:    freertos.NewQueue(capacity),
+		kindName: kindName,
+	}
+
+	inst.Methods["receive"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		data, err := queueData(self)
+		if err != nil {
+			return nil, err
+		}
+		// Use timeout 0 for host-friendly polling semantics in tests and REPL use.
+		item, ok := data.queue.Receive(0)
+		if !ok || item == nil {
+			return object.Nil, nil
+		}
+		if obj, ok := item.(*object.Object); ok {
+			return obj, nil
+		}
+		return object.Nil, nil
+	}}
+	inst.Methods["send:"] = &object.MethodDef{Native: func(self *object.Object, msgArgs []*object.Object) (*object.Object, error) {
+		if len(msgArgs) == 0 {
+			return object.Nil, nil
+		}
+		data, err := queueData(self)
+		if err != nil {
+			return nil, err
+		}
+		if !data.queue.Send(msgArgs[0], 0) {
+			return nil, &Error{Kind: "TaskError", Message: data.kindName + " send failed", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		return msgArgs[0], nil
+	}}
+	inst.Methods["count"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		data, err := queueData(self)
+		if err != nil {
+			return nil, err
+		}
+		return object.IntObject(int64(data.queue.Count())), nil
+	}}
+	inst.Methods["printString"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		data, err := queueData(self)
+		if err != nil {
+			return nil, err
+		}
+		return object.StringObject("a " + data.kindName), nil
+	}}
+
+	if kindName == "Channel" {
+		inst.Methods["<-"] = inst.Methods["send:"]
+	}
+
+	return inst, nil
+}
+
+func queueData(self *object.Object) (*queueObjectData, error) {
+	if self == nil {
+		return nil, &Error{Kind: "TaskError", Message: "queue object is nil", Pos: ast.Pos{Line: 1, Col: 1}}
+	}
+	data, ok := self.Env.(*queueObjectData)
+	if !ok || data == nil || data.queue == nil {
+		return nil, &Error{Kind: "TaskError", Message: "queue object is not initialized", Pos: ast.Pos{Line: 1, Col: 1}}
+	}
+	return data, nil
 }
 
 // BuiltinDispatch handles message sends to primitive types.
