@@ -5,7 +5,7 @@ fact := [ :n |
         ifTrue:  [ 1 ]
         ifFalse: [ n * (fact value: n - 1) ]
 ].
-Transcript println: (fact value: 14) printString.
+Transcript println: (fact value: 16) printString.
 
 Transcript println: (fact value: 0) printString.
 Transcript println: (fact value: 5) printString.
