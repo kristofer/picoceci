@@ -147,6 +147,27 @@ func TestParser_ChannelReceiveSugar(t *testing.T) {
 	}
 }
 
+func TestParser_MultipleTypedChannelsDecl(t *testing.T) {
+	prog := parse(t, "| tempChan: Channel<<Float>> alertChan: Channel<<String>> cmdQueue: Queue<<Symbol>> |")
+	decl, ok := prog.Statements[0].(*ast.VarDecl)
+	if !ok {
+		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+	}
+	wantNames := []string{"tempChan", "alertChan", "cmdQueue"}
+	wantTypes := []string{"Channel<<Float>>", "Channel<<String>>", "Queue<<Symbol>>"}
+	if len(decl.Names) != len(wantNames) || len(decl.Types) != len(wantTypes) {
+		t.Fatalf("got names=%v types=%v, want names=%v types=%v", decl.Names, decl.Types, wantNames, wantTypes)
+	}
+	for i := range wantNames {
+		if decl.Names[i] != wantNames[i] {
+			t.Fatalf("name[%d]: got %q, want %q", i, decl.Names[i], wantNames[i])
+		}
+		if decl.Types[i] != wantTypes[i] {
+			t.Fatalf("type[%d]: got %q, want %q", i, decl.Types[i], wantTypes[i])
+		}
+	}
+}
+
 func TestParser_VarDecl(t *testing.T) {
 	prog := parse(t, "| x: Int  y: Float  z: Any |")
 	vd, ok := prog.Statements[0].(*ast.VarDecl)
@@ -170,6 +191,15 @@ func TestParser_VarDecl_BareIdentifierError(t *testing.T) {
 	_, err := p.ParseProgram()
 	if err == nil {
 		t.Error("expected parse error for bare identifier in var-decl, got nil")
+	}
+}
+
+func TestParser_VarDecl_GenericMissingTypeError(t *testing.T) {
+	l := lexer.NewString("| ch: Channel<<>> |")
+	p := parser.New(l)
+	_, err := p.ParseProgram()
+	if err == nil {
+		t.Fatal("expected parse error for missing generic parameter type, got nil")
 	}
 }
 
