@@ -246,8 +246,10 @@ func (p *Parser) parseVarDecl() *ast.VarDecl {
 		p.advance()
 		typeName, ok := p.parseTypeName()
 		if !ok {
-			p.errorf("expected type name after %q:, got %q", varName, p.cur.Literal)
-			typeName = "Any"
+			if typeName == "" {
+				p.errorf("expected type name after %q:, got %q", varName, p.cur.Literal)
+				typeName = "Any"
+			}
 		}
 		n.Names = append(n.Names, varName)
 		n.Types = append(n.Types, typeName)
@@ -268,8 +270,10 @@ func (p *Parser) parseTypeName() (string, bool) {
 		p.advance()
 		paramType, ok := p.parseTypeName()
 		if !ok {
-			p.errorf("expected type parameter after \"<<\" in generic type %q, got %q", typeName, p.cur.Literal)
-			return typeName, true
+			if paramType == "" {
+				p.errorf("expected type parameter after \"<<\" in generic type %q, got %q", typeName, p.cur.Literal)
+			}
+			return typeName, false
 		}
 		typeName += "<<" + paramType
 		if p.cur.Kind == lexer.BINOP && p.cur.Literal == ">>" {
@@ -277,6 +281,7 @@ func (p *Parser) parseTypeName() (string, bool) {
 			p.advance()
 		} else {
 			p.errorf("expected \">>\" to close generic type %q, got %q", typeName, p.cur.Literal)
+			return typeName, false
 		}
 	}
 
