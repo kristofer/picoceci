@@ -217,6 +217,7 @@ func newQueueLikeInstance(kindName string, args []*object.Object) (*object.Objec
 		if err != nil {
 			return nil, err
 		}
+		// Use timeout 0 for host-friendly polling semantics in tests and REPL use.
 		item, ok := data.queue.Receive(0)
 		if !ok || item == nil {
 			return object.Nil, nil
@@ -267,7 +268,7 @@ func queueData(self *object.Object) (*queueObjectData, error) {
 	}
 	data, ok := self.Env.(*queueObjectData)
 	if !ok || data == nil || data.queue == nil {
-		return nil, &Error{Kind: "TaskError", Message: "queue object is not initialised", Pos: ast.Pos{Line: 1, Col: 1}}
+		return nil, &Error{Kind: "TaskError", Message: "queue object is not initialized", Pos: ast.Pos{Line: 1, Col: 1}}
 	}
 	return data, nil
 }
