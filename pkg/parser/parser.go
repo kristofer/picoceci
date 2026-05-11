@@ -245,11 +245,9 @@ func (p *Parser) parseVarDecl() *ast.VarDecl {
 		varName := strings.TrimSuffix(p.cur.Literal, ":")
 		p.advance()
 		typeName, ok := p.parseTypeName()
-		if !ok {
-			if typeName == "" {
-				p.errorf("expected type name after %q:, got %q", varName, p.cur.Literal)
-				typeName = "Any"
-			}
+		if !ok && typeName == "" {
+			p.errorf("expected type name after %q:, got %q", varName, p.cur.Literal)
+			typeName = "Any"
 		}
 		n.Names = append(n.Names, varName)
 		n.Types = append(n.Types, typeName)

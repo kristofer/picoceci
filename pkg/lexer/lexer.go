@@ -411,8 +411,13 @@ func (l *Lexer) readBinOp() Token {
 	if l.pos+1 < len(l.src) {
 		// Keep generic delimiters and channel receive as distinct tokens so
 		// nested generic types like Queue<<Channel<<Int>>>> remain parseable.
-		switch string(l.src[l.pos : l.pos+2]) {
-		case "<<", ">>", "<-":
+		ch0, ch1 := l.src[l.pos], l.src[l.pos+1]
+		switch {
+		case ch0 == '<' && ch1 == '<':
+			fallthrough
+		case ch0 == '>' && ch1 == '>':
+			fallthrough
+		case ch0 == '<' && ch1 == '-':
 			l.advance()
 			l.advance()
 			return Token{Kind: BINOP, Literal: string(l.src[start:l.pos]), Line: l.line, Col: l.col}
