@@ -168,3 +168,27 @@ func TestREPLVMPasteRecursiveBlockThenInvoke(t *testing.T) {
 		t.Errorf("expected '=> 3628800' after invoking fact, got: %q", out.String())
 	}
 }
+
+func TestREPLVMChannelRoundTrip(t *testing.T) {
+	input := strings.Join([]string{
+		"---",
+		"| ch: Channel<<Float>> |",
+		"ch := Channel new: 2.",
+		"ch <- 3.14.",
+		"<-ch.",
+		"---",
+		"",
+	}, "\n")
+
+	in := strings.NewReader(input)
+	var out, errOut bytes.Buffer
+
+	runREPLWithVMIO(in, &out, &errOut)
+
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected stderr: %s", errOut.String())
+	}
+	if !strings.Contains(out.String(), "=> 3.14") {
+		t.Errorf("expected '=> 3.14' from channel round trip, got: %q", out.String())
+	}
+}
