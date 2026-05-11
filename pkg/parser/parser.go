@@ -268,7 +268,7 @@ func (p *Parser) parseTypeName() (string, bool) {
 		p.advance()
 		paramType, ok := p.parseTypeName()
 		if !ok {
-			p.errorf("expected type name after \"<<\" in generic type %q, got %q", typeName, p.cur.Literal)
+			p.errorf("expected type parameter after \"<<\" in generic type %q, got %q", typeName, p.cur.Literal)
 			return typeName, true
 		}
 		typeName += "<<" + paramType

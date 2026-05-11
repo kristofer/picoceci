@@ -409,6 +409,8 @@ func (l *Lexer) readIdentifierOrKeyword() Token {
 func (l *Lexer) readBinOp() Token {
 	start := l.pos
 	if l.pos+1 < len(l.src) {
+		// Keep generic delimiters and channel receive as distinct tokens so
+		// nested generic types like Queue<<Channel<<Int>>>> remain parseable.
 		switch string(l.src[l.pos : l.pos+2]) {
 		case "<<", ">>", "<-":
 			l.advance()
