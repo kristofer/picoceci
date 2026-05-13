@@ -1,7 +1,7 @@
 # picoceci Language Specification
 
 Version: 2.0-draft  
-Status: Specification — not yet implemented  
+Status: Specification complete; implementation in progress  
 Target runtime: TinyGo 0.32+ on ESP32-S3-N16R8 (and compatible MCUs)
 
 ---
@@ -87,6 +87,7 @@ at:   put:   ifTrue:   value:   spawn:
 ### 2.5 Literals
 
 #### Integer
+
 ```
 42        "decimal"
 16rFF     "hex — base#value notation like Smalltalk"
@@ -94,22 +95,27 @@ at:   put:   ifTrue:   value:   spawn:
 ```
 
 #### Float
+
 ```
 3.14   1.5e-3
 ```
 
 #### Character
+
 ```
 $A   $\n   $\t
 ```
 
 #### String
+
 Single-quoted, with `''` as escape for a literal single quote:
+
 ```
 'Hello'   'it''s fine'
 ```
 
 #### Symbol
+
 ```
 #hello   #at:put:   #'with spaces'
 ```
@@ -117,11 +123,13 @@ Single-quoted, with `''` as escape for a literal single quote:
 Symbols are interned; two symbols with the same characters are identical objects.
 
 #### Byte Array
+
 ```
 #[ 1 2 3 255 ]
 ```
 
 #### Array literal
+
 ```
 #( 1 'two' #three )
 ```
@@ -129,11 +137,13 @@ Symbols are interned; two symbols with the same characters are identical objects
 Elements must be literals.
 
 #### Boolean
+
 ```
 true   false
 ```
 
 #### Nil
+
 ```
 nil
 ```
@@ -421,6 +431,7 @@ object LoggedCounter {
 ```
 
 Rules:
+
 - `compose` copies slot names and methods from the named object's *template*.
 - If the current object defines a method with the same name, it **overrides** the composed method.
 - `super <message>` dispatches to the composed object's method for that message.
@@ -775,6 +786,7 @@ import '/sdcard/libs/Sensor'.
 ```
 
 `import` searches in order:
+
 1. The built-in standard library (compiled into the runtime).
 2. The SD card path `/sdcard/picoceci/libs/`.
 3. Absolute paths.
