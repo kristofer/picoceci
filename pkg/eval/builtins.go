@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"math"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/kristofer/picoceci/pkg/ast"
 	"github.com/kristofer/picoceci/pkg/freertos"
+	picnet "github.com/kristofer/picoceci/pkg/net"
 	"github.com/kristofer/picoceci/pkg/object"
 )
 
@@ -18,15 +20,31 @@ type BlockCaller interface {
 	CallBlock(blk *object.Object, args []*object.Object) (*object.Object, error)
 }
 
+// REPLRunner is a function that runs a REPL session on the given reader/writer.
+// It is called by PicoceciREPL serve: when a client connects.
+// The function should block until the session ends (client disconnects or EOF).
+type REPLRunner func(r io.Reader, w io.Writer)
+
 // GlobalSinks configures output destinations for built-in global objects.
 // Console and Transcript can be routed independently.
+// WifiManager and REPLRunner wire WiFi and remote-REPL support.
 type GlobalSinks struct {
 	ConsoleWriter    io.Writer
 	TranscriptWriter io.Writer
+
+	// WifiManager, when non-nil, backs the Wifi singleton.
+	// If nil, a new default Manager is created automatically.
+	WifiManager *picnet.Manager
+
+	// REPLRunner, when non-nil, is called by PicoceciREPL serve: session.
+	// It receives the session's Reader and Writer and should run until the
+	// session ends.  If nil, PicoceciREPL.serve: is a no-op.
+	REPLRunner REPLRunner
 }
 
 // InitialGlobals returns a map of global names to their initial values.
-// This includes: nil, true, false, Console, Transcript, Array, Queue, Channel.
+// This includes: nil, true, false, Console, Transcript, Array, Queue,
+// Channel, Task, Wifi, PicoceciREPL.
 // Both the tree-walking interpreter and bytecode VM use this.
 func InitialGlobals() map[string]*object.Object {
 	return InitialGlobalsWithSinks(GlobalSinks{})
@@ -55,7 +73,33 @@ func InitialGlobalsWithSinks(sinks GlobalSinks) map[string]*object.Object {
 	globals["Queue"] = makeQueueClass()
 	globals["Channel"] = makeChannelClass()
 
+	// Task singleton — spawns picoceci blocks as goroutines.
+	// The BlockCaller is set lazily via SetTaskCaller after interpreter/VM init.
+	taskData := &taskObjectData{}
+	globals["Task"] = makeTaskObject(taskData)
+
+	// Wifi singleton — WiFi station management + TCP listener setup.
+	wifiMgr := sinks.WifiManager
+	if wifiMgr == nil {
+		wifiMgr = picnet.NewManager()
+	}
+	globals["Wifi"] = makeWifiObject(wifiMgr, globals)
+
+	// PicoceciREPL singleton — runs a REPL on a network session.
+	globals["PicoceciREPL"] = makePicoceciREPLObject(sinks.REPLRunner)
+
 	return globals
+}
+
+// SetTaskCaller wires the BlockCaller (interpreter or VM) into the Task global
+// so that Task spawn:name: can call picoceci blocks.
+// Call this once after creating the interpreter or VM.
+func SetTaskCaller(globals map[string]*object.Object, caller BlockCaller) {
+	if taskObj, ok := globals["Task"]; ok {
+		if data, ok := taskObj.Env.(*taskObjectData); ok {
+			data.caller = caller
+		}
+	}
 }
 
 // registerBuiltins populates the global environment with built-in objects.
@@ -271,6 +315,313 @@ func queueData(self *object.Object) (*queueObjectData, error) {
 		return nil, &Error{Kind: "TaskError", Message: "queue object is not initialized", Pos: ast.Pos{Line: 1, Col: 1}}
 	}
 	return data, nil
+}
+
+// ---------------------------------------------------------------------------
+// Task global
+// ---------------------------------------------------------------------------
+
+// taskObjectData holds the lazy BlockCaller for the Task singleton.
+type taskObjectData struct {
+	caller BlockCaller
+}
+
+// makeTaskObject creates the Task singleton picoceci object.
+// data.caller must be set via SetTaskCaller before Task spawn:name: is usable.
+func makeTaskObject(data *taskObjectData) *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+		Env:     data,
+	}
+
+	// Task spawn: aBlock name: aString
+	// Spawns aBlock in a new goroutine.  Returns the task name as a Symbol.
+	o.Methods["spawn:name:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		td, ok := self.Env.(*taskObjectData)
+		if !ok || td == nil || td.caller == nil {
+			return nil, &Error{Kind: "TaskError", Message: "Task not initialized; call SetTaskCaller after creating interpreter", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		if len(args) < 2 {
+			return object.Nil, nil
+		}
+		blk := args[0]
+		if blk == nil || blk.Kind != object.KindBlock {
+			return nil, &Error{Kind: "TaskError", Message: "Task spawn:name: first argument must be a Block", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		name := ""
+		if args[1] != nil {
+			name = args[1].SVal
+		}
+		caller := td.caller
+		go func() {
+			_, _ = caller.CallBlock(blk, nil)
+		}()
+		return object.SymbolObject(name), nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("Task"), nil
+	}}
+
+	return o
+}
+
+// ---------------------------------------------------------------------------
+// Wifi global
+// ---------------------------------------------------------------------------
+
+// wifiObjectData holds the WiFi manager and the globals map used to rebind
+// Transcript when a session connects.
+type wifiObjectData struct {
+	mgr     *picnet.Manager
+	globals map[string]*object.Object // reference to globals for Transcript rebind
+}
+
+// makeWifiObject creates the Wifi singleton picoceci object.
+// globals is kept as a reference so listenOn:do: can rebind Transcript.
+func makeWifiObject(mgr *picnet.Manager, globals map[string]*object.Object) *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+		Env:     &wifiObjectData{mgr: mgr, globals: globals},
+	}
+
+	// Wifi connectSSID: ssid password: pass
+	o.Methods["connectSSID:password:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		wd := self.Env.(*wifiObjectData)
+		ssid := ""
+		pass := ""
+		if len(args) > 0 && args[0] != nil {
+			ssid = args[0].SVal
+		}
+		if len(args) > 1 && args[1] != nil {
+			pass = args[1].SVal
+		}
+		if err := wd.mgr.Connect(ssid, pass); err != nil {
+			return nil, &Error{Kind: "IOError", Message: "Wifi connect: " + err.Error(), Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		return object.Nil, nil
+	}}
+
+	// Wifi status  → #idle | #connecting | #connected | #error
+	o.Methods["status"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		wd := self.Env.(*wifiObjectData)
+		return object.SymbolObject(wd.mgr.Status().String()), nil
+	}}
+
+	// Wifi ipAddress  → String
+	o.Methods["ipAddress"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		wd := self.Env.(*wifiObjectData)
+		ip := wd.mgr.IPAddress()
+		if ip == "" {
+			return object.Nil, nil
+		}
+		return object.StringObject(ip), nil
+	}}
+
+	// Wifi listenOn: port do: aBlock
+	// Opens a TCP listener on port, then for each accepted session calls aBlock
+	// with the session picoceci object as the argument.
+	// The block is called in the current goroutine (blocking); wrap in Task spawn:
+	// to run concurrently.
+	o.Methods["listenOn:do:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		wd := self.Env.(*wifiObjectData)
+		if len(args) < 2 {
+			return object.Nil, nil
+		}
+		portObj := args[0]
+		blk := args[1]
+		if portObj == nil || portObj.Kind != object.KindSmallInt {
+			return nil, &Error{Kind: "IOError", Message: "Wifi listenOn:do: port must be an Integer", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		if blk == nil || blk.Kind != object.KindBlock {
+			return nil, &Error{Kind: "IOError", Message: "Wifi listenOn:do: second argument must be a Block", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		ln, err := wd.mgr.Listen(int(portObj.IVal))
+		if err != nil {
+			return nil, &Error{Kind: "IOError", Message: "Wifi listenOn: " + err.Error(), Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		// Store the listener so callers can close it later.
+		self.Slots["_listener"] = makeListenerObject(ln)
+		return self.Slots["_listener"], nil
+	}}
+
+	// Wifi disconnect
+	o.Methods["disconnect"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		wd := self.Env.(*wifiObjectData)
+		if err := wd.mgr.Disconnect(); err != nil {
+			return nil, &Error{Kind: "IOError", Message: "Wifi disconnect: " + err.Error(), Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		return object.Nil, nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("Wifi"), nil
+	}}
+
+	return o
+}
+
+// makeListenerObject wraps a net.Listener as a picoceci object.
+func makeListenerObject(ln picnet.Listener) *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+		Env:     ln,
+	}
+
+	o.Methods["accept"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		l, ok := self.Env.(picnet.Listener)
+		if !ok || l == nil {
+			return nil, &Error{Kind: "IOError", Message: "listener not initialized", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		sess, err := l.Accept()
+		if err != nil {
+			return nil, &Error{Kind: "IOError", Message: "listener accept: " + err.Error(), Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		return makeSessionObject(sess), nil
+	}}
+
+	o.Methods["close"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		l, ok := self.Env.(picnet.Listener)
+		if !ok || l == nil {
+			return object.Nil, nil
+		}
+		_ = l.Close()
+		return object.Nil, nil
+	}}
+
+	o.Methods["addr"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		l, ok := self.Env.(picnet.Listener)
+		if !ok || l == nil {
+			return object.Nil, nil
+		}
+		return object.StringObject(l.Addr()), nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("a TCPListener"), nil
+	}}
+
+	return o
+}
+
+// ---------------------------------------------------------------------------
+// Session picoceci object
+// ---------------------------------------------------------------------------
+
+// makeSessionObject wraps a net.Session as a picoceci object.
+// The session exposes readLine, write:, remoteAddr, close, and asWriter.
+func makeSessionObject(sess picnet.Session) *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+		Env:     sess,
+	}
+
+	o.Methods["readLine"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		s, ok := self.Env.(picnet.Session)
+		if !ok || s == nil {
+			return object.Nil, nil
+		}
+		line, err := s.ReadLine()
+		if err != nil {
+			return object.Nil, nil
+		}
+		return object.StringObject(line), nil
+	}}
+
+	o.Methods["write:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		s, ok := self.Env.(picnet.Session)
+		if !ok || s == nil {
+			return object.Nil, nil
+		}
+		if len(args) > 0 && args[0] != nil {
+			_, _ = io.WriteString(s, displayString(args[0]))
+		}
+		return object.Nil, nil
+	}}
+
+	o.Methods["writeln:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		s, ok := self.Env.(picnet.Session)
+		if !ok || s == nil {
+			return object.Nil, nil
+		}
+		if len(args) > 0 && args[0] != nil {
+			_, _ = io.WriteString(s, displayString(args[0])+"\n")
+		}
+		return object.Nil, nil
+	}}
+
+	o.Methods["remoteAddr"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		s, ok := self.Env.(picnet.Session)
+		if !ok || s == nil {
+			return object.Nil, nil
+		}
+		return object.StringObject(s.RemoteAddr()), nil
+	}}
+
+	o.Methods["close"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		s, ok := self.Env.(picnet.Session)
+		if !ok || s == nil {
+			return object.Nil, nil
+		}
+		_ = s.Close()
+		return object.Nil, nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("a TCPSession"), nil
+	}}
+
+	return o
+}
+
+// ---------------------------------------------------------------------------
+// PicoceciREPL global
+// ---------------------------------------------------------------------------
+
+// makePicoceciREPLObject creates the PicoceciREPL singleton.
+// runner is called for each session; if nil serve: is a no-op.
+func makePicoceciREPLObject(runner REPLRunner) *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+		Env:     runner,
+	}
+
+	// PicoceciREPL serve: session
+	// Runs the REPL runner on the session.  Blocks until the session ends.
+	o.Methods["serve:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		fn, _ := self.Env.(REPLRunner)
+		if fn == nil {
+			return object.Nil, nil
+		}
+		if len(args) == 0 || args[0] == nil {
+			return object.Nil, nil
+		}
+		sessionObj := args[0]
+		sess, ok := sessionObj.Env.(picnet.Session)
+		if !ok || sess == nil {
+			return nil, &Error{Kind: "IOError", Message: "PicoceciREPL serve: argument must be a TCPSession", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		// Use a bufio.Reader so the runner gets line-buffered input.
+		r := bufio.NewReader(sess)
+		fn(r, sess)
+		return object.Nil, nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("PicoceciREPL"), nil
+	}}
+
+	return o
 }
 
 // BuiltinDispatch handles message sends to primitive types.

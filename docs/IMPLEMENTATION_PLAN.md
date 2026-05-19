@@ -37,16 +37,26 @@ The following milestones have been implemented and verified with `go test ./...`
   - `eval.InitialGlobalsWithSinks(...)` supports separate output sinks.
   - New constructors allow explicit globals/sinks in both interpreter and VM.
   - Default behavior remains backward-compatible when sinks are not provided.
-- TinyGo target wiring updated:
-  - `target/esp32s3/main.go` now creates VM instances with `NewVMWithSinks(...)`.
-  - `Console` is wired to the TinyGo serial console.
-  - `Transcript` is currently wired to a placeholder writer, ready to be replaced by a native WiFi TCP writer.
-
-Next integration step:
-
-- Replace the placeholder Transcript writer in `target/esp32s3/main.go` with a WiFi TCP session writer so Transcript acts as network standard output while Console stays on USB serial.
+- Phase 5 complete:
+  - `target/esp32s3/main.go` entry point with UART REPL and paste mode.
+  - `pkg/tinygo/` — platform-independent Console I/O with TinyGo + desktop stubs.
+  - `pkg/freertos/` — Task, Queue, Semaphore, Timer bridge objects with stubs.
+  - `pkg/sdcard/` — SD card / filesystem objects with local-filesystem stubs.
+- Phase 6 complete — WiFi ingress + remote REPL:
+  - `pkg/net/` — TinyGo WiFi + TCP listener wrapper (`Session`, `Listener`, `Manager`).
+  - `Wifi` singleton exposed in globals (`connectSSID:password:`, `status`, `ipAddress`,
+    `listenOn:do:`, `disconnect`).
+  - `Task` singleton exposed in globals (`spawn:name:`) — BlockCaller auto-wired via
+    `eval.SetTaskCaller` after interpreter/VM creation.
+  - `PicoceciREPL` singleton exposed in globals (`serve:`) — uses `GlobalSinks.REPLRunner`
+    callback to run a REPL on a session's reader/writer.
+  - `target/esp32s3/main.go` updated: placeholder Transcript replaced by WiFi TCP session
+    writer; serial Console remains available for local recovery; accept loop spawns per-
+    session REPL goroutines.
+  - Desktop stubs fully tested; integration tests in `pkg/net/net_test.go`.
 
 ---
+
 
 ## Repository layout (target)
 
