@@ -4,6 +4,8 @@ Version: 0.3-draft
 Audience: AI agents and human contributors implementing the picoceci interpreter  
 Target: TinyGo 0.32+ · ESP32-S3-N16R8 · standalone picoceci runtime
 
+Version note: v0.2 remained an internal working draft; v0.3 marks the published Canal→standalone runtime shift.
+
 ---
 
 ## Overview

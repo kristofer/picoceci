@@ -44,7 +44,7 @@ The name is a nod to *pico* (small, in the spirit of microcontrollers) and *ceci
 | **Interfaces, not types** | Any object that responds to the right messages satisfies an interface |
 | **Small footprint** | The whole runtime fits in under 128 KB of RAM on an ESP32-S3 |
 | **Concurrent by nature** | Tasks, queues, semaphores, and channels are first-class citizens |
-| **Standalone on TinyGo** | The language runs in a single TinyGo runtime with built-in device singletons |
+| **Standalone on TinyGo** | The language runs in a single TinyGo runtime with built-in singleton services |
 
 ---
 
