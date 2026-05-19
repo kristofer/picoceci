@@ -3,7 +3,7 @@ module github.com/kristofer/picoceci
 go 1.22
 
 // picoceci — a small, high-protein Smalltalk-syntax Go-semantics language
-// targeting TinyGo / ESP32-S3 via the Canal capability microkernel.
+// targeting TinyGo / ESP32-S3 with a single-runtime embedded architecture.
 //
 // Build for desktop:
 //   go build ./...

@@ -44,7 +44,7 @@ The name is a nod to *pico* (small, in the spirit of microcontrollers) and *ceci
 | **Interfaces, not types** | Any object that responds to the right messages satisfies an interface |
 | **Small footprint** | The whole runtime fits in under 128 KB of RAM on an ESP32-S3 |
 | **Concurrent by nature** | Tasks, queues, semaphores, and channels are first-class citizens |
-| **Runs on Canal** | The language runs on the Canal runtime, designed for embedded systems |
+| **Standalone on TinyGo** | The language runs in a single TinyGo runtime with built-in singleton services |
 
 ---
 
@@ -490,15 +490,13 @@ Those are not small things. Those are the intellectual tools that the next gener
 
 ---
 
-## 9. The Canal Connection
+## 9. The v3 Runtime Shift
 
-picoceci does not run in isolation. It is designed to run on top of **Canal**, a capability-based microkernel for TinyGo.
+picoceci now runs as a standalone TinyGo runtime on ESP32-S3. Instead of splitting responsibilities across an external kernel/runtime boundary, picoceci hosts lightweight `Task` objects directly inside one VM and uses channels (queue-backed mailboxes) for isolation and communication.
 
-A capability kernel is one in which access to resources — files, network sockets, GPIO pins, I²C buses — is represented as an *unforgeable token* that you must hold to use the resource. You cannot access a resource you were not explicitly given a capability for. This is a powerful security model for networked IoT devices: a compromised node cannot reach beyond the resources it was initially granted.
+Device access is provided by built-in singleton objects such as `Wifi`, `SDCard`, and `LED`. This keeps the programming model simple for students while preserving clear boundaries: tasks communicate by message passing, and hardware side effects remain concentrated in explicit service objects.
 
-picoceci objects map naturally onto Canal capabilities. A `TempSensor` object, in the Canal model, *is* a capability object — you can pass it to another task, compose it into a larger object, or revoke it, and the security properties are enforced at the kernel level. No raw pointers, no arbitrary memory access, no possibility of one node's code reaching into another node's address space.
-
-For spacecraft applications, this is not just nice to have. It is essential. A software fault in the humidity sensor node should not be able to corrupt the data from the CO₂ sensor, let alone affect the flight control system. Canal's capability model, combined with picoceci's message-passing objects and isolated Tasks, provides the foundation for that kind of strong isolation.
+For spacecraft-style systems, this keeps the mental model consistent: many small tasks, each focused on one role, each restartable, each easy to reason about under failure.
 
 ---
 
@@ -530,7 +528,7 @@ picoceci is in active development. Here is where things stand:
 | Tree-walking interpreter | ✅ Complete | Runs picoceci programs on desktop (Go host) |
 | Bytecode compiler & VM | ✅ Complete | For better MCU performance |
 | TinyGo / ESP32-S3 target | ✅ Complete | Interpreter embedded in TinyGo binary |
-| Canal integration | ✅ Complete | Capability-kernel IPC bridge |
+| WiFi ingress + singleton services | 🚧 In progress | Native `Wifi`/`SDCard`/`LED` runtime objects |
 | Standard library | ✅ Complete | GPIO, I²C, SPI, UART, network |
 | Developer tooling | 🚧 In progress | Debugger, profiler, VS Code extension |
 
@@ -779,7 +777,7 @@ No, it's not. This is just the beginning. There are so many features and pattern
 
 But even more than features, there are so many applications we haven't explored: controlling actuators, implementing control and feedback loops, building distributed algorithms, integrating with cloud services, layering supervisory abstractions and on and on.
 
-And what happens when we borrow some of the great ideas in **Kubernetes** and distributed systems design? What does a picoceci-based network of MCU systems look like when we start thinking in terms of microservices, service discovery, load balancing, and so on? And when we add another thousand MCUs with sensors, each running picoceci/Canal, to the network? What does the software architecture of a spacecraft look like when it is built on top of a system like this?
+And what happens when we borrow some of the great ideas in **Kubernetes** and distributed systems design? What does a picoceci-based network of MCU systems look like when we start thinking in terms of microservices, service discovery, load balancing, and so on? And when we add another thousand MCUs with sensors, each running picoceci tasks over local WiFi links, to the network? What does the software architecture of a spacecraft look like when it is built on top of a system like this?
 
 And `picoceci` itself is just a starting point. The real magic will happen when we take the language and bend it to a different beastie, a follow-on language that isn't Smalltalk-weird, but isn't Go either. A language that can be concise, but not so strange like Hoon or Nock (see *Urbit*), but very form fitting to the commodity MCU hardware that can be produced so inexpensively and programmed with confidence when you write libraries and frameworks on top of it, when you build real systems that solve real problems.
 *And run real spacecraft.*

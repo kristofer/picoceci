@@ -4,7 +4,7 @@
 
 ## What is picoceci?
 
-picoceci is a message-passing interpreted language that borrows Smalltalk's elegant syntax while embracing Go's composability and interface-based polymorphism.  It targets resource-constrained microcontrollers (initially the ESP32-S3-N16R8) via [TinyGo](https://tinygo.org/) and the [Canal](https://github.com/kristofer/Canal) capability-based microkernel.
+picoceci is a message-passing interpreted language that borrows Smalltalk's elegant syntax while embracing Go's composability and interface-based polymorphism. It targets resource-constrained microcontrollers (initially the ESP32-S3-N16R8) via [TinyGo](https://tinygo.org/) with a single-runtime design centered on picoceci `Task` objects.
 
 | Feature | Choice |
 |---|---|
@@ -14,7 +14,7 @@ picoceci is a message-passing interpreted language that borrows Smalltalk's eleg
 | Runtime host | TinyGo → bare-metal ESP32-S3 |
 | Storage | SD card up to 32 GB (FAT32 / littlefs) |
 | Concurrency | FreeRTOS tasks, queues, semaphores (via TinyGo) |
-| Kernel services | Canal capability-kernel IPC |
+| Device services | Built-in singleton objects (`Wifi`, `SDCard`, `LED`) |
 
 ## Quick taste
 
@@ -80,12 +80,12 @@ picoceci/
 - `Console` and `Transcript` now support separate output sinks.
 - TinyGo target now constructs VM with sink-aware globals:
   - `Console` -> serial console
-  - `Transcript` -> placeholder sink (ready to swap for Canal TCP writer)
+  - `Transcript` -> pluggable sink (to be wired to a native WiFi TCP session writer)
 - Test baseline is green with `go test ./...`.
 
-## Relation to Canal
+## v3 runtime direction
 
-picoceci is intended to run as a user-space scripting layer on top of the Canal capability microkernel.  Canal provides isolated capability objects; picoceci objects map naturally onto Canal capabilities, letting scripts safely compose and invoke kernel services without raw pointer access.
+picoceci v3 removes Canal as a runtime dependency. Concurrency and service boundaries now live inside one picoceci VM using lightweight `Task` objects, channels (backed by FreeRTOS queues), and built-in singleton objects for board services (`Wifi`, `SDCard`, `LED`).
 
 ## Notes
 
@@ -99,33 +99,6 @@ tinygo flash -target=esp32s3-generic -port=/dev/cu.usbmodem11201 ./target/esp32s
 ```
 
 to load and run.
-
-## Sat May 2: Work notes
-
-Summary of Today's Work
-Created picoceci as a [Canal](https://github.com/kristofer/Canal.git) domain:
-
-File Purpose
-Canal/canal/domains/picoceci/main.go Domain entry, REPL loop
-Canal/canal/domains/picoceci/console.go Serial I/O with proper echo/newline handling
-Canal/canal/domains/picoceci/filesystem.go FS stub for future capability wiring
-Canal/canal/go.mod Added picoceci dependency
-Canal/canal/Makefile Added picoceci, picoceci-flash, picoceci-run targets
-Build commands:
-
-cd /Users/kryounger/LocalProjects/Canal/canal
-make picoceci-run   # Build, flash, and monitor
-What works:
-
-Arithmetic: 3 + 4. → 7
-Console output: Console println: 'hello'.
-Echo and backspace handling
-Ctrl-D exits cleanly
-Next steps (when you're ready):
-
-- Wire filesystem to Canal capabilities for module loading
-- Test memory-intensive expressions (now has access to PSRAM via Canal/ESP-IDF)
-- Add more picoceci builtins that use Canal services
 
 ## License
 

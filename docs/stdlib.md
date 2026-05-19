@@ -394,9 +394,38 @@ See `docs/sdcard.md` for full API.
 
 Summary:
 
+- `SDCard` — singleton mount and health object (`mount`, `mounted`, `root`, `status`)
 - `File` — open, read, write, seek, close files on SD card
 - `Directory` — list, create, remove directories
 - `Path` — platform-independent path manipulation
+
+---
+
+## Module: `wifi`
+
+`Wifi` is a singleton object for station-mode networking and TCP listener setup.
+
+| Message | Description |
+|---|---|
+| `Wifi connectSSID: ssid password: pass` | Connect using WPA2 credentials |
+| `Wifi status` | Connection state object/symbol (`#idle`, `#connecting`, `#connected`, `#error`) |
+| `Wifi ipAddress` | Current IPv4 string (or `nil` when disconnected) |
+| `Wifi listenOn: port do: aBlock` | Start TCP listener; executes block for each accepted session |
+| `Wifi disconnect` | Disconnect from AP and close listener sockets |
+
+---
+
+## Module: `led`
+
+`LED` is a board-provided singleton for status indication.
+
+| Message | Description |
+|---|---|
+| `LED on` | Set default board LED high |
+| `LED off` | Set default board LED low |
+| `LED toggle` | Invert current state |
+| `LED blinkEvery: ms` | Start periodic blink timer |
+| `LED stopBlink` | Stop periodic blinking |
 
 ---
 
@@ -488,20 +517,6 @@ result := spi transfer: #[16r9F 0 0 0].
 | `spi write: byteArray` | Write only |
 | `spi read: n` | Read n bytes |
 | `spi close` | Release bus |
-
----
-
-## Module: `canal`
-
-See `LANGUAGE_SPEC.md` §13.2 and the Canal repository for full semantics.
-
-| Message | Description |
-|---|---|
-| `Canal capability: #name` | Acquire named capability |
-| `cap send: byteArray` | Write to capability |
-| `cap receive: n` | Read n bytes from capability |
-| `cap close` | Release capability |
-| `cap delegate: taskObject` | Transfer ownership |
 
 ---
 
