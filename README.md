@@ -95,7 +95,7 @@ and <https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/get-started/e
 use
 
 ```bash
-tinygo flash -target=esp32s3-generic -port=/dev/cu.usbmodem11201 ./target/esp32s3 && tinygo monitor
+tinygo flash -target=esp32s3-generic -port=/dev/cu.usbmodem111201 ./target/esp32s3 && tinygo monitor
 ```
 
 to load and run.

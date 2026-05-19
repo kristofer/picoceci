@@ -1,6 +1,6 @@
 module github.com/kristofer/picoceci
 
-go 1.22
+go 1.25.0
 
 // picoceci — a small, high-protein Smalltalk-syntax Go-semantics language
 // targeting TinyGo / ESP32-S3 with a single-runtime embedded architecture.

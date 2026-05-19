@@ -42,12 +42,22 @@ var (
 	wifiPort = 2323
 )
 
-func main() {
-	// Wait for USB CDC to initialize
-	time.Sleep(2 * time.Second)
+const (
+	startupSerialReadyTimeout = 2 * time.Second
+	startupSerialPollInterval = 20 * time.Millisecond
+)
 
+func main() {
 	// Initialize console
 	console := tinygo.NewConsole()
+	write(console, "boot: console initialized\n")
+
+	// Wait for USB CDC host traffic (if any), but never block boot forever.
+	if waitForSerialReady(console, startupSerialReadyTimeout) {
+		write(console, "boot: usb host activity detected\n")
+	} else {
+		write(console, "boot: usb wait timeout, continuing\n")
+	}
 	write(console, "picoceci "+version+" (ESP32-S3)\n")
 
 	// Try to mount SD card (will fail without hardware driver)
@@ -79,6 +89,8 @@ func main() {
 		} else {
 			write(console, "WiFi connected: "+wifiMgr.IPAddress()+"\n")
 		}
+	} else {
+		write(console, "WiFi disabled (empty SSID)\n")
 	}
 
 	// Start WiFi TCP listener if connected.
@@ -92,13 +104,28 @@ func main() {
 			write(console, "TCP REPL on :2323\n")
 			go acceptLoop(console, tcpListener, loader)
 		}
+	} else {
+		write(console, "TCP REPL disabled: WiFi not connected\n")
 	}
 	_ = tcpListener
 
 	write(console, "Ready.\n\n")
 
-	// Start serial REPL (Console = USB serial; Transcript = serial for recovery).
-	runREPL(console, console, loader)
+	// Start serial REPL using the console's line reader so typed input echoes.
+	runSerialREPL(console, loader)
+}
+
+// waitForSerialReady waits until input appears on USB serial or timeout elapses.
+// This gives hosts a chance to attach without forcing a fixed startup delay.
+func waitForSerialReady(console tinygo.Console, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if console.Available() > 0 {
+			return true
+		}
+		time.Sleep(startupSerialPollInterval)
+	}
+	return false
 }
 
 // acceptLoop accepts one TCP connection at a time and runs a REPL on it.
@@ -112,13 +139,64 @@ func acceptLoop(console tinygo.Console, ln picnet.Listener, loader *module.Loade
 			return
 		}
 		write(console, "TCP session from "+sess.RemoteAddr()+"\n")
-		runREPL(bufio.NewReader(sess), sess, loader)
+		runSessionREPL(bufio.NewReader(sess), sess, loader)
 		_ = sess.Close()
 		write(console, "TCP session ended\n")
 	}
 }
 
-// runREPL runs the interactive REPL.
+// runSerialREPL runs the interactive REPL over the local USB console.
+// It uses the console's built-in line reader so typed characters echo and
+// backspace/enter behave naturally on the serial terminal.
+func runSerialREPL(console tinygo.Console, loader *module.Loader) {
+	var buf strings.Builder
+	inPaste := false
+
+	for {
+		if inPaste {
+			writeStr(console, "... ")
+		} else {
+			writeStr(console, "> ")
+		}
+
+		line, err := console.ReadLine()
+		if err != nil {
+			writeStr(console, "\nGoodbye!\n")
+			break
+		}
+
+		// "---" toggles paste mode.
+		if line == "---" {
+			if !inPaste {
+				inPaste = true
+				buf.Reset()
+				writeStr(console, "(paste mode on: type '---' to run)\n")
+			} else {
+				inPaste = false
+				src := buf.String()
+				buf.Reset()
+				if src != "" {
+					execSource(console, src, loader)
+				}
+			}
+			continue
+		}
+
+		if inPaste {
+			buf.WriteString(line)
+			buf.WriteByte('\n')
+			continue
+		}
+
+		if line == "" {
+			continue
+		}
+
+		execSource(console, line, loader)
+	}
+}
+
+// runSessionREPL runs the interactive REPL for TCP sessions.
 // r is the input source; w receives output (Transcript + prompts + results).
 // Uses fresh VM per expression to minimize memory accumulation.
 //
@@ -127,7 +205,7 @@ func acceptLoop(console tinygo.Console, ln picnet.Listener, loader *module.Loade
 // buffered program as a single unit.  This lets you paste multi-line
 // programs over the USB serial interface without triggering a parse
 // error on every incomplete line.
-func runREPL(r io.Reader, w io.Writer, loader *module.Loader) {
+func runSessionREPL(r io.Reader, w io.Writer, loader *module.Loader) {
 	br, ok := r.(*bufio.Reader)
 	if !ok {
 		br = bufio.NewReader(r)
