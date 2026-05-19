@@ -308,4 +308,3 @@ func write(c tinygo.Console, s string) {
 func writeStr(w io.Writer, s string) {
 	_, _ = io.WriteString(w, s)
 }
-

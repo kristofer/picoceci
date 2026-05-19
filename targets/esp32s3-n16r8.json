@@ -1,4 +1,8 @@
 {
-	"inherits": ["esp32s3-generic"],
-	"build-tags": ["esp32s3_n16r8"]
+	"inherits": [
+		"esp32s3-generic"
+	],
+	"build-tags": [
+		"esp32s3_n16r8"
+	]
 }
