@@ -15,6 +15,8 @@
 package main
 
 import (
+	"bufio"
+	"io"
 	"strings"
 	"time"
 
@@ -22,20 +24,23 @@ import (
 	"github.com/kristofer/picoceci/pkg/eval"
 	"github.com/kristofer/picoceci/pkg/lexer"
 	"github.com/kristofer/picoceci/pkg/module"
+	picnet "github.com/kristofer/picoceci/pkg/net"
 	"github.com/kristofer/picoceci/pkg/parser"
 	"github.com/kristofer/picoceci/pkg/sdcard"
 	"github.com/kristofer/picoceci/pkg/tinygo"
 )
 
-const version = "0.2.0-dev"
+const version = "0.3.0-dev"
 
-// transcriptPlaceholder is a temporary Transcript sink.
-// Replace this writer with a native WiFi TCP session writer when ready.
-type transcriptPlaceholder struct{}
-
-func (w *transcriptPlaceholder) Write(p []byte) (int, error) {
-	return len(p), nil
-}
+// wifiSSID and wifiPass are build-time WiFi credentials.
+// Override at build time with:
+//
+//	-ldflags="-X main.wifiSSID=myssid -X main.wifiPass=mypassword"
+var (
+	wifiSSID = "picoceci-net"
+	wifiPass = ""
+	wifiPort = 2323
+)
 
 func main() {
 	// Wait for USB CDC to initialize
@@ -64,13 +69,57 @@ func main() {
 	module.RegisterBuiltins(resolver)
 	loader := module.NewLoader(resolver)
 
+	// Connect to WiFi.  Continue even if this fails so the serial REPL
+	// remains available as a recovery path.
+	wifiMgr := picnet.NewManager()
+	if wifiSSID != "" {
+		write(console, "WiFi connecting...\n")
+		if err := wifiMgr.Connect(wifiSSID, wifiPass); err != nil {
+			write(console, "WiFi error: "+err.Error()+"\n")
+		} else {
+			write(console, "WiFi connected: "+wifiMgr.IPAddress()+"\n")
+		}
+	}
+
+	// Start WiFi TCP listener if connected.
+	var tcpListener picnet.Listener
+	if wifiMgr.Status() == picnet.WifiStateConnected {
+		ln, err := wifiMgr.Listen(wifiPort)
+		if err != nil {
+			write(console, "TCP listen error: "+err.Error()+"\n")
+		} else {
+			tcpListener = ln
+			write(console, "TCP REPL on :2323\n")
+			go acceptLoop(console, tcpListener, loader)
+		}
+	}
+	_ = tcpListener
+
 	write(console, "Ready.\n\n")
 
-	// Start REPL
-	runREPL(console, loader)
+	// Start serial REPL (Console = USB serial; Transcript = serial for recovery).
+	runREPL(console, console, loader)
+}
+
+// acceptLoop accepts one TCP connection at a time and runs a REPL on it.
+// On disconnect it loops back and waits for the next connection.
+// The serial Console always remains available for local recovery.
+func acceptLoop(console tinygo.Console, ln picnet.Listener, loader *module.Loader) {
+	for {
+		sess, err := ln.Accept()
+		if err != nil {
+			write(console, "TCP accept error: "+err.Error()+"\n")
+			return
+		}
+		write(console, "TCP session from "+sess.RemoteAddr()+"\n")
+		runREPL(bufio.NewReader(sess), sess, loader)
+		_ = sess.Close()
+		write(console, "TCP session ended\n")
+	}
 }
 
 // runREPL runs the interactive REPL.
+// r is the input source; w receives output (Transcript + prompts + results).
 // Uses fresh VM per expression to minimize memory accumulation.
 //
 // Paste mode: type "---" alone on a line to enter paste mode; all
@@ -78,35 +127,41 @@ func main() {
 // buffered program as a single unit.  This lets you paste multi-line
 // programs over the USB serial interface without triggering a parse
 // error on every incomplete line.
-func runREPL(console tinygo.Console, loader *module.Loader) {
+func runREPL(r io.Reader, w io.Writer, loader *module.Loader) {
+	br, ok := r.(*bufio.Reader)
+	if !ok {
+		br = bufio.NewReader(r)
+	}
+
 	var buf strings.Builder
 	inPaste := false
 
 	for {
 		if inPaste {
-			write(console, "... ")
+			writeStr(w, "... ")
 		} else {
-			write(console, "> ")
+			writeStr(w, "> ")
 		}
 
-		line, err := console.ReadLine()
+		line, err := br.ReadString('\n')
 		if err != nil {
-			write(console, "\nGoodbye!\n")
+			writeStr(w, "\nGoodbye!\n")
 			break
 		}
+		line = strings.TrimRight(line, "\r\n")
 
 		// "---" toggles paste mode.
 		if line == "---" {
 			if !inPaste {
 				inPaste = true
 				buf.Reset()
-				write(console, "(paste mode on: type '---' to run)\n")
+				writeStr(w, "(paste mode on: type '---' to run)\n")
 			} else {
 				inPaste = false
 				src := buf.String()
 				buf.Reset()
 				if src != "" {
-					execSource(console, src, loader)
+					execSource(w, src, loader)
 				}
 			}
 			continue
@@ -122,18 +177,19 @@ func runREPL(console tinygo.Console, loader *module.Loader) {
 			continue
 		}
 
-		execSource(console, line, loader)
+		execSource(w, line, loader)
 	}
 }
 
-// execSource parses, compiles, and runs src, writing results to console.
-func execSource(console tinygo.Console, src string, loader *module.Loader) {
+// execSource parses, compiles, and runs src, writing results to w.
+// Both Console and Transcript are wired to w so remote sessions see all output.
+func execSource(w io.Writer, src string, loader *module.Loader) {
 	// Parse
 	l := lexer.NewString(src)
 	p := parser.New(l)
 	prog, err := p.ParseProgram()
 	if err != nil {
-		write(console, "parse: "+err.Error()+"\n")
+		writeStr(w, "parse: "+err.Error()+"\n")
 		return
 	}
 
@@ -141,31 +197,37 @@ func execSource(console tinygo.Console, src string, loader *module.Loader) {
 	c := bytecode.NewCompilerWithLoader(loader)
 	chunk, err := c.Compile(prog.Statements)
 	if err != nil {
-		write(console, "compile: "+err.Error()+"\n")
+		writeStr(w, "compile: "+err.Error()+"\n")
 		return
 	}
 
 	// Run with fresh VM each time.
-	// Console stays on USB serial; Transcript is currently a placeholder sink.
+	// Transcript is bound to w (the active session or serial console).
 	vm := bytecode.NewVMWithSinks(eval.GlobalSinks{
-		ConsoleWriter:    console,
-		TranscriptWriter: &transcriptPlaceholder{},
+		ConsoleWriter:    w,
+		TranscriptWriter: w,
 	})
 	vm.SetBlocks(c.GetBlocks())
 	vm.AddGlobals(c.GetGlobals())
 	result, err := vm.Run(chunk)
 	if err != nil {
-		write(console, "error: "+err.Error()+"\n")
+		writeStr(w, "error: "+err.Error()+"\n")
 		return
 	}
 
 	// Print result
 	if result != nil {
-		write(console, "=> "+result.PrintString()+"\n")
+		writeStr(w, "=> "+result.PrintString()+"\n")
 	}
 }
 
-// write is a helper to write a string to the console.
+// write is a helper to write a string to a tinygo.Console.
 func write(c tinygo.Console, s string) {
 	c.Write([]byte(s))
 }
+
+// writeStr is a helper to write a string to any io.Writer.
+func writeStr(w io.Writer, s string) {
+	_, _ = io.WriteString(w, s)
+}
+

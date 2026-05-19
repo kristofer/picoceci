@@ -290,7 +290,18 @@ func NewWithGlobals(globals map[string]*object.Object) *Interpreter {
 		objectTemplates: make(map[string]*ast.ObjectDecl),
 	}
 	registerBuiltinsWithGlobals(interp.globals, cloneGlobals(globals))
+	interp.setupTaskCaller()
 	return interp
+}
+
+// setupTaskCaller wires the interpreter as the BlockCaller for the Task global.
+// This allows Task spawn:name: to call picoceci blocks.
+func (interp *Interpreter) setupTaskCaller() {
+	if taskObj, ok := interp.globals.Get("Task"); ok {
+		if data, ok := taskObj.Env.(*taskObjectData); ok {
+			data.caller = interp
+		}
+	}
 }
 
 // NewWithLoader creates an Interpreter with a module loader for handling imports.

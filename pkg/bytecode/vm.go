@@ -69,6 +69,9 @@ func NewVMWithGlobals(globals map[string]*object.Object) *VM {
 		sp:      0,
 		blocks:  make([]*CompiledBlock, 0),
 	}
+	// Wire the VM as the BlockCaller for the Task global so that
+	// Task spawn:name: can call picoceci blocks.
+	eval.SetTaskCaller(vm.globals, vm)
 	return vm
 }
 
