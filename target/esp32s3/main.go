@@ -30,7 +30,7 @@ import (
 const version = "0.2.0-dev"
 
 // transcriptPlaceholder is a temporary Transcript sink.
-// Replace this writer with a Canal TCP session writer when ready.
+// Replace this writer with a native WiFi TCP session writer when ready.
 type transcriptPlaceholder struct{}
 
 func (w *transcriptPlaceholder) Write(p []byte) (int, error) {

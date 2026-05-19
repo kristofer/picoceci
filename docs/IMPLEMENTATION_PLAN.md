@@ -1,14 +1,23 @@
 # picoceci Implementation Plan
 
-Version: 0.1-draft  
+Version: 0.3-draft  
 Audience: AI agents and human contributors implementing the picoceci interpreter  
-Target: TinyGo 0.32+ · ESP32-S3-N16R8 · Canal microkernel
+Target: TinyGo 0.32+ · ESP32-S3-N16R8 · standalone picoceci runtime
 
 ---
 
 ## Overview
 
 This document breaks the picoceci implementation into discrete, independently-deliverable phases.  Each phase has clearly defined inputs, outputs, acceptance criteria, and suggested implementation notes so that an agent can pick up any phase and deliver it without needing context from other phases (except where noted).
+
+## v3 shift assumptions and design implications
+
+- **No Canal dependency:** picoceci now owns the MCU runtime end-to-end. No phase may require Canal services to boot, run, or accept user input.
+- **Single VM, many tasks:** concurrency boundaries that were previously represented as external domains are now `Task` objects inside one VM.
+- **Channels as queue-backed mailboxes:** `Channel` should map directly to FreeRTOS queues so task communication is explicit and testable.
+- **Singleton device services:** `Wifi`, `SDCard`, and `LED` are global singleton objects, available to all tasks.
+- **Network-first interaction path:** the ESP32-S3 target must expose a WiFi-backed TCP listener so users can interact with a live interpreter session (`nc` workflow).
+- **Boot reliability first:** each MCU-facing phase must include startup stability checks and crash-loop mitigation, before adding new features.
 
 ## Recent progress (May 2026)
 
@@ -29,11 +38,11 @@ The following milestones have been implemented and verified with `go test ./...`
 - TinyGo target wiring updated:
   - `target/esp32s3/main.go` now creates VM instances with `NewVMWithSinks(...)`.
   - `Console` is wired to the TinyGo serial console.
-  - `Transcript` is currently wired to a placeholder writer, ready to be replaced by a Canal TCP writer.
+  - `Transcript` is currently wired to a placeholder writer, ready to be replaced by a native WiFi TCP writer.
 
 Next integration step:
 
-- Replace the placeholder Transcript writer in `target/esp32s3/main.go` with the Canal TCP session writer so Transcript acts as network standard output while Console stays on USB serial.
+- Replace the placeholder Transcript writer in `target/esp32s3/main.go` with a WiFi TCP session writer so Transcript acts as network standard output while Console stays on USB serial.
 
 ---
 
@@ -57,7 +66,7 @@ picoceci/
 │   ├── tinygo/            Phase 5 — TinyGo-specific runtime glue
 │   ├── freertos/          Phase 5 — FreeRTOS bridge objects
 │   ├── sdcard/            Phase 5 — SD card / filesystem objects
-│   └── canal/             Phase 6 — Canal capability bridge
+│   └── net/               Phase 6 — WiFi/TCP listener bridge
 ├── target/
 │   └── esp32s3/           Phase 5 — board-specific entry point
 │       └── main.go
@@ -336,7 +345,7 @@ Tree-walking requires keeping the full AST in RAM.  On an ESP32-S3-N16R8 with 8 
 ### Incremental REPL VM compile note
 
 When embedding a VM-backed REPL that compiles each input independently (for example,
-Canal-side `evalREPLSource`), keep VM block/global state stable across inputs.
+the ESP32 WiFi session REPL path), keep VM block/global state stable across inputs.
 
 Required call order per input:
 
@@ -385,11 +394,12 @@ Modules always available regardless of filesystem:
 - `collections` — `OrderedCollection`, `Dictionary`, `Set`, `Bag`
 - `task` — `Task`, `Queue`, `Semaphore`, `Timer`, `Channel`
 - `sdcard` — `File`, `Directory`, `Path`
+- `wifi` — `Wifi`
+- `led` — `LED`
 - `gpio` — `GPIO`
 - `uart` — `UART`
 - `i2c` — `I2C`
 - `spi` — `SPI`
-- `canal` — `Canal`
 
 ### Test requirements
 
@@ -492,48 +502,43 @@ func main() {
 
 ---
 
-## Phase 6 — Canal Integration
+## Phase 6 — WiFi ingress + remote REPL
 
-**Goal:** Expose Canal capability-kernel services to picoceci programs.
+**Goal:** Make one picoceci VM reachable over WiFi TCP on ESP32-S3 without Canal.
 
 ### Inputs
 
 - Phase 5 deliverables
-- Canal repo: <https://github.com/kristofer/Canal>
 - `LANGUAGE_SPEC.md` §13.2
 
 ### Deliverables
 
-- `pkg/canal/` — Canal capability bridge
-- Canal capability objects: `Capability`, `CapabilityTable`
+- `pkg/net/` (or equivalent target package) — TinyGo WiFi + TCP listener wrapper
+- `Wifi` singleton object exposed in globals
+- Session bridge that wires TCP stream to REPL input and Transcript output
+- Startup config path for SSID/password/port (build-time constants first; SD-backed config later)
 
 ### Design
 
-Canal represents every kernel resource as a capability (an unforgeable token).  picoceci wraps capabilities as opaque objects.  The picoceci runtime holds a `CapabilityTable` that maps symbolic names to Canal capability IDs.
-
 ```picoceci
-| cap: Any |
-cap := Canal capability: #uart0.
-cap send: 'hello' asBytes.
+Wifi connectSSID: ssid password: pass.
+Wifi listenOn: 2323 do: [ :session |
+    Task spawn: [ PicoceciREPL serve: session ] name: 'tcp-session'
+].
 ```
 
-Under the hood:
+Implementation notes:
 
-1. `Canal capability: #uart0` looks up `uart0` in the table, calls Canal's `CapAcquire(id)`.
-2. The returned `Capability` object holds the Canal cap ID.
-3. `cap send: bytes` calls Canal's `CapWrite(id, buf, len)`.
-4. If the capability is not held by this task, Canal raises a fault → translated to `CapabilityError`.
-
-### Security notes
-
-- A picoceci task can only hold capabilities that Canal has granted to its task.
-- `cap delegate: anotherTask` calls Canal's `CapDelegate(id, targetTaskID)` — transfers ownership.
-- Capabilities are not copyable (GC finalizer calls `CapRelease` on last reference).
+1. WiFi connect/retry loop runs before listener startup; failures surface as `IOError`.
+2. Listener accepts one session at a time in MVP; each accepted session runs in a spawned `Task`.
+3. Transcript sink is rebound per active session so `nc` users see command output.
+4. Serial Console remains available for local recovery/debug.
 
 ### Test requirements
 
-- Canal bridge has mock implementations for desktop testing
-- `CapabilityError` is raised when attempting to use an ungranted capability
+- Desktop stubs for `Wifi` object and listener API
+- Integration test that starts listener, accepts a session, and echoes REPL output
+- Manual board test: `nc <ip> <port>` reaches interpreter prompt after boot
 
 ---
 
@@ -565,11 +570,17 @@ Under the hood:
 - `Math sin:`, `cos:`, `sqrt:`, `pow:exp:`
 - Fixed-point arithmetic (`FixedPoint` object) for MCUs without FPU
 
-### Networking (optional)
+### v3 singleton services (required)
 
-- `WiFi connect: ssid password: pass`
-- `TCPSocket connect: host port: port`
-- `HTTPClient get: url`
+- `Wifi` singleton — connect, status, listen, disconnect
+- `SDCard` singleton — mount state + card health + filesystem root helpers
+- `LED` singleton — status and heartbeat control
+
+### Reliability/runtime lifecycle
+
+- Task supervision strategy (`TaskSupervisor`) for crash/restart behavior
+- Task naming conventions for diagnostics (all system tasks must have stable names)
+- Boot-phase health checks (`Wifi`, `SDCard`, interpreter) with explicit failure states
 
 ---
 
@@ -632,9 +643,9 @@ picoceci uses semantic versioning.  The language version is embedded in bytecode
 | **M3 — Bytecode VM** | 3 | 5–7 days |
 | **M4 — Modules + SD** | 4 + partial 5 | 3–4 days |
 | **M5 — MCU target** | 5 | 4–6 days |
-| **M6 — Canal** | 6 | 3–4 days |
+| **M6 — WiFi ingress** | 6 | 3–4 days |
 | **M7 — StdLib + Tooling** | 7 + 8 | ongoing |
 
 ---
 
-*End of picoceci Implementation Plan v0.1-draft*
+*End of picoceci Implementation Plan v0.3-draft*
