@@ -43,8 +43,8 @@ type GlobalSinks struct {
 }
 
 // InitialGlobals returns a map of global names to their initial values.
-// This includes: nil, true, false, Console, Transcript, Array, Queue,
-// Channel, Task, Wifi, PicoceciREPL.
+// This includes: nil, true, false (picoceci keywords), Console, Transcript,
+// Array, Queue, Channel, Task, Wifi, PicoceciREPL.
 // Both the tree-walking interpreter and bytecode VM use this.
 func InitialGlobals() map[string]*object.Object {
 	return InitialGlobalsWithSinks(GlobalSinks{})

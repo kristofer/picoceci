@@ -90,10 +90,7 @@ func (s *tcpSession) Write(p []byte) (int, error) {
 
 func (s *tcpSession) ReadLine() (string, error) {
 	line, err := s.reader.ReadString('\n')
-	if err != nil {
-		return strings.TrimRight(line, "\r\n"), err
-	}
-	return strings.TrimRight(line, "\r\n"), nil
+	return strings.TrimRight(line, "\r\n"), err
 }
 
 func (s *tcpSession) RemoteAddr() string {
