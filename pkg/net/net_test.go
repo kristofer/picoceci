@@ -10,6 +10,17 @@ import (
 	picnet "github.com/kristofer/picoceci/pkg/net"
 )
 
+// TestManagerInitialState verifies new managers start idle with no IP.
+func TestManagerInitialState(t *testing.T) {
+	m := picnet.NewManager()
+	if got := m.Status(); got != picnet.WifiStateIdle {
+		t.Fatalf("initial Status() = %v, want idle", got)
+	}
+	if got := m.IPAddress(); got != "" {
+		t.Fatalf("initial IPAddress() = %q, want empty", got)
+	}
+}
+
 // TestManagerConnect verifies that desktop connect is a no-op success.
 func TestManagerConnect(t *testing.T) {
 	m := picnet.NewManager()
@@ -28,11 +39,81 @@ func TestManagerConnect(t *testing.T) {
 func TestManagerDisconnect(t *testing.T) {
 	m := picnet.NewManager()
 	_ = m.Connect("testnet", "password")
+	if got := m.Status(); got != picnet.WifiStateConnected {
+		t.Fatalf("precondition Status() = %v, want connected", got)
+	}
 	if err := m.Disconnect(); err != nil {
 		t.Fatalf("Disconnect failed: %v", err)
 	}
 	if m.Status() != picnet.WifiStateIdle {
 		t.Errorf("Status() = %v after disconnect, want idle", m.Status())
+	}
+	if got := m.IPAddress(); got != "" {
+		t.Errorf("IPAddress() = %q after disconnect, want empty", got)
+	}
+}
+
+// TestListenerCloseUnblocksAccept verifies listener close terminates pending Accept.
+func TestListenerCloseUnblocksAccept(t *testing.T) {
+	m := picnet.NewManager()
+	ln, err := m.Listen(0)
+	if err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+
+	acceptErr := make(chan error, 1)
+	go func() {
+		_, err := ln.Accept()
+		acceptErr <- err
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	if err := ln.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	select {
+	case err := <-acceptErr:
+		if err == nil {
+			t.Fatal("Accept returned nil error after listener close")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Accept did not unblock after listener close")
+	}
+}
+
+// TestDisconnectClosesListeners verifies Disconnect tears down active listeners.
+func TestDisconnectClosesListeners(t *testing.T) {
+	m := picnet.NewManager()
+	_ = m.Connect("testnet", "password")
+
+	ln, err := m.Listen(0)
+	if err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+
+	acceptErr := make(chan error, 1)
+	go func() {
+		_, err := ln.Accept()
+		acceptErr <- err
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	if err := m.Disconnect(); err != nil {
+		t.Fatalf("Disconnect failed: %v", err)
+	}
+
+	select {
+	case err := <-acceptErr:
+		if err == nil {
+			t.Fatal("Accept returned nil error after manager disconnect")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Accept did not unblock after manager disconnect")
+	}
+
+	if got := m.Status(); got != picnet.WifiStateIdle {
+		t.Fatalf("Status() after disconnect = %v, want idle", got)
 	}
 }
 
@@ -134,6 +215,44 @@ func TestSessionReadLine(t *testing.T) {
 	got := <-serverDone
 	if got != "ping" {
 		t.Errorf("ReadLine = %q, want %q", got, "ping")
+	}
+}
+
+// TestSessionCloseThenRead verifies reads fail after remote close.
+func TestSessionCloseThenRead(t *testing.T) {
+	m := picnet.NewManager()
+	ln, err := m.Listen(0)
+	if err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+	defer ln.Close()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		sess, err := ln.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		_ = sess.Close()
+
+		buf := make([]byte, 1)
+		_, err = sess.Read(buf)
+		if err == nil {
+			serverDone <- fmt.Errorf("expected read error after session close")
+			return
+		}
+		serverDone <- nil
+	}()
+
+	conn, err := stdnet.DialTimeout("tcp", ln.Addr(), 2*time.Second)
+	if err != nil {
+		t.Fatalf("Dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server error: %v", err)
 	}
 }
 

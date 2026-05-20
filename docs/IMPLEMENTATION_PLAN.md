@@ -55,8 +55,56 @@ The following milestones have been implemented and verified with `go test ./...`
     session REPL goroutines.
   - Desktop stubs fully tested; integration tests in `pkg/net/net_test.go`.
 
----
+## Bridge Runtime Phase 1 Verification Gates (BR1)
 
+These gates define done-criteria for the Bridge Runtime MVP Phase 1 foundations.
+
+### Mandatory gates (must pass)
+
+1. Build isolation gates
+
+- `make esp32-build` succeeds.
+- `make esp32-build` prints target isolation success checks.
+- Default target remains free of `esp32s3_idf_bridge` tag and bridge `extra-files`.
+
+1. Host regression gates
+
+- `go test ./pkg/net ./pkg/eval ./pkg/tinygo` succeeds.
+- `go test ./...` succeeds.
+
+1. Bridge contract gates
+
+- `docs/freertos-bridge.md` contains Bridge ABI v1 function table.
+- `docs/freertos-bridge.md` contains bridge return-code mapping table.
+- `targets/esp32s3_idf_bridge.c` exported bridge symbols have explicit contract comments.
+
+1. Runtime guardrail gates
+
+- `target/esp32s3/main.go` logs selected runtime network mode at boot.
+- WiFi/TCP startup failures explicitly preserve serial REPL recovery path.
+- Accept loop retries transient errors and exits only on closed-listener conditions.
+
+### Experimental gates (allowed to fail with known reason)
+
+1. Native bridge link gate
+
+- `make esp32-build-idf` may fail on unresolved ESP-IDF/LwIP symbols in current TinyGo link environment.
+- Failure output must include actionable diagnostics and fallback command (`make esp32-run-bridge`).
+
+1. Native runtime activation gate
+
+- `make esp32-run-idf` is informational during Phase 1 and not a release blocker.
+
+### Evidence checklist
+
+Record command output snippets for each gate in PR notes:
+
+1. `make esp32-build`
+2. `go test ./pkg/net ./pkg/eval ./pkg/tinygo`
+3. `go test ./...`
+4. `make esp32-build-idf`
+
+---
 
 ## Repository layout (target)
 

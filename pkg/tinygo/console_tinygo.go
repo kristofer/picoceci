@@ -13,6 +13,8 @@ import (
 // when connected via USB on boards with native USB support.
 type serialConsole struct{}
 
+const maxSerialLineBytes = 1024
+
 // newConsole creates a console using the default serial interface.
 // On ESP32-S3 with USB, this is the USB CDC interface.
 func newConsole() Console {
@@ -21,6 +23,10 @@ func newConsole() Console {
 }
 
 func (c *serialConsole) Read(buf []byte) (int, error) {
+	if len(buf) == 0 {
+		return 0, nil
+	}
+
 	n := 0
 	for n < len(buf) {
 		if machine.Serial.Buffered() == 0 {
@@ -50,7 +56,7 @@ func (c *serialConsole) Write(buf []byte) (int, error) {
 }
 
 func (c *serialConsole) ReadLine() (string, error) {
-	var sb strings.Builder
+	line := make([]byte, 0, 64)
 	for {
 		// Wait for input with a small yield to prevent tight spinning
 		for machine.Serial.Buffered() == 0 {
@@ -59,35 +65,35 @@ func (c *serialConsole) ReadLine() (string, error) {
 
 		b, err := machine.Serial.ReadByte()
 		if err != nil {
-			return sb.String(), err
+			return string(line), err
 		}
 
-		// Echo the character
-		machine.Serial.WriteByte(b)
-
-		if b == '\n' || b == '\r' {
-			// Print newline if we got \r
-			if b == '\r' {
-				machine.Serial.WriteByte('\n')
-			}
-			break
-		}
-		// Handle backspace
-		if b == 8 || b == 127 {
-			s := sb.String()
-			if len(s) > 0 {
-				sb.Reset()
-				sb.WriteString(s[:len(s)-1])
-				// Erase character on terminal
+		switch b {
+		case '\n', '\r':
+			machine.Serial.WriteByte('\r')
+			machine.Serial.WriteByte('\n')
+			return strings.TrimRight(string(line), "\r\n"), nil
+		case 8, 127:
+			if len(line) > 0 {
+				line = line[:len(line)-1]
 				machine.Serial.WriteByte(8)
 				machine.Serial.WriteByte(' ')
 				machine.Serial.WriteByte(8)
 			}
 			continue
+		default:
+			if b < 32 && b != '\t' {
+				continue
+			}
+			if len(line) >= maxSerialLineBytes {
+				// Bell feedback warns that further input is ignored for this line.
+				machine.Serial.WriteByte('\a')
+				continue
+			}
+			line = append(line, b)
+			machine.Serial.WriteByte(b)
 		}
-		sb.WriteByte(b)
 	}
-	return sb.String(), nil
 }
 
 func (c *serialConsole) Available() int {

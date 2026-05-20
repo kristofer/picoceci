@@ -7,25 +7,32 @@ import (
 	"fmt"
 	stdnet "net"
 	"strings"
+	"sync"
 )
 
 // desktopManagerImpl is the non-TinyGo (desktop/test) backend for Manager.
 // WiFi operations are no-ops; TCP listening uses the standard library.
 type desktopManagerImpl struct {
+	mu        sync.Mutex
 	connected bool
+	listeners map[*tcpListener]struct{}
 }
 
 func newManagerImpl() managerImpl {
-	return &desktopManagerImpl{}
+	return &desktopManagerImpl{listeners: make(map[*tcpListener]struct{})}
 }
 
 func (d *desktopManagerImpl) connect(ssid, password string) error {
 	// On desktop, WiFi "connect" is a no-op — we are already on the network.
+	d.mu.Lock()
 	d.connected = true
+	d.mu.Unlock()
 	return nil
 }
 
 func (d *desktopManagerImpl) status() WifiState {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.connected {
 		return WifiStateConnected
 	}
@@ -33,6 +40,8 @@ func (d *desktopManagerImpl) status() WifiState {
 }
 
 func (d *desktopManagerImpl) ipAddress() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if !d.connected {
 		return ""
 	}
@@ -45,17 +54,42 @@ func (d *desktopManagerImpl) listen(port int) (Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &tcpListener{ln: l}, nil
+	tl := &tcpListener{ln: l, owner: d}
+	d.mu.Lock()
+	d.listeners[tl] = struct{}{}
+	d.mu.Unlock()
+	return tl, nil
 }
 
 func (d *desktopManagerImpl) disconnect() error {
+	d.mu.Lock()
+	listeners := make([]*tcpListener, 0, len(d.listeners))
+	for l := range d.listeners {
+		listeners = append(listeners, l)
+	}
+	d.listeners = make(map[*tcpListener]struct{})
 	d.connected = false
+	d.mu.Unlock()
+
+	for _, l := range listeners {
+		_ = l.Close()
+	}
 	return nil
+}
+
+func (d *desktopManagerImpl) releaseListener(l *tcpListener) {
+	d.mu.Lock()
+	delete(d.listeners, l)
+	d.mu.Unlock()
 }
 
 // tcpListener wraps a net.Listener as a picoceci Listener.
 type tcpListener struct {
-	ln stdnet.Listener
+	ln    stdnet.Listener
+	owner *desktopManagerImpl
+
+	mu     sync.Mutex
+	closed bool
 }
 
 func (l *tcpListener) Accept() (Session, error) {
@@ -71,6 +105,17 @@ func (l *tcpListener) Addr() string {
 }
 
 func (l *tcpListener) Close() error {
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		return nil
+	}
+	l.closed = true
+	l.mu.Unlock()
+
+	if l.owner != nil {
+		l.owner.releaseListener(l)
+	}
 	return l.ln.Close()
 }
 

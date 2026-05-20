@@ -100,6 +100,56 @@ tinygo flash -target=esp32s3-generic -port=/dev/cu.usbmodem111201 ./target/esp32
 
 to load and run.
 
+For a TCP endpoint on port 2323 (host bridge to USB serial), use:
+
+```bash
+make esp32-run-bridge PORT=/dev/cu.usbmodem111201 WIFI_SSID=atlasnet WIFI_PASS=atlasnet
+```
+
+Then connect from another terminal:
+
+```bash
+nc 127.0.0.1 2323
+```
+
+## Runtime modes
+
+### Mode A: Default TinyGo runtime (stable)
+
+Build and flash with the default target:
+
+```bash
+make esp32-build
+make esp32-run PORT=/dev/cu.usbmodem111201 WIFI_SSID=atlasnet WIFI_PASS=atlasnet
+```
+
+### Mode B: Host TCP bridge (recommended today for TCP :2323)
+
+This keeps the on-device runtime unchanged and bridges USB serial to host TCP.
+
+```bash
+make esp32-run-bridge PORT=/dev/cu.usbmodem111201 WIFI_SSID=atlasnet WIFI_PASS=atlasnet
+nc 127.0.0.1 2323
+```
+
+### Mode C: Experimental native ESP-IDF/LwIP bridge
+
+```bash
+make esp32-run-idf PORT=/dev/cu.usbmodem111201 WIFI_SSID=atlasnet WIFI_PASS=atlasnet
+```
+
+If bridge mode fails with undefined symbols such as `nvs_flash_*`, `esp_netif_*`, `esp_wifi_*`, `lwip_*`, or `vTaskDelay`, your TinyGo link environment is missing the required ESP-IDF/LwIP exports for this path. Use Mode B while bridge runtime library wiring is completed.
+
+Experimental native ESP-IDF/LwIP bridge attempt (on-device WiFi TCP :2323):
+
+```bash
+make esp32-run-idf PORT=/dev/cu.usbmodem111201 WIFI_SSID=atlasnet WIFI_PASS=atlasnet
+```
+
+If your TinyGo toolchain does not export/link ESP-IDF WiFi and LwIP symbols,
+this experimental target may fail at link time. In that case, continue using
+the host bridge workflow above.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

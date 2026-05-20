@@ -1,4 +1,4 @@
-//go:build tinygo
+//go:build tinygo && !esp32s3_idf_bridge
 
 package net
 

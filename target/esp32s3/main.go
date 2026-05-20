@@ -45,12 +45,14 @@ var (
 const (
 	startupSerialReadyTimeout = 2 * time.Second
 	startupSerialPollInterval = 20 * time.Millisecond
+	tcpAcceptRetryDelay       = 300 * time.Millisecond
 )
 
 func main() {
 	// Initialize console
 	console := tinygo.NewConsole()
 	write(console, "boot: console initialized\n")
+	write(console, "boot: network mode "+runtimeNetworkMode()+"\n")
 
 	// Wait for USB CDC host traffic (if any), but never block boot forever.
 	if waitForSerialReady(console, startupSerialReadyTimeout) {
@@ -83,9 +85,10 @@ func main() {
 	// remains available as a recovery path.
 	wifiMgr := picnet.NewManager()
 	if wifiSSID != "" {
-		write(console, "WiFi connecting...\n")
+		write(console, "WiFi connecting (ssid="+wifiSSID+")...\n")
 		if err := wifiMgr.Connect(wifiSSID, wifiPass); err != nil {
 			write(console, "WiFi error: "+err.Error()+"\n")
+			write(console, "WiFi fallback: serial REPL remains available\n")
 		} else {
 			write(console, "WiFi connected: "+wifiMgr.IPAddress()+"\n")
 		}
@@ -99,13 +102,14 @@ func main() {
 		ln, err := wifiMgr.Listen(wifiPort)
 		if err != nil {
 			write(console, "TCP listen error: "+err.Error()+"\n")
+			write(console, "TCP fallback: serial REPL remains available\n")
 		} else {
 			tcpListener = ln
-			write(console, "TCP REPL on :2323\n")
+			write(console, "TCP REPL on :"+itoa(wifiPort)+"\n")
 			go acceptLoop(console, tcpListener, loader)
 		}
 	} else {
-		write(console, "TCP REPL disabled: WiFi not connected\n")
+		write(console, "TCP REPL disabled: WiFi state="+wifiMgr.Status().String()+"\n")
 	}
 	_ = tcpListener
 
@@ -135,14 +139,45 @@ func acceptLoop(console tinygo.Console, ln picnet.Listener, loader *module.Loade
 	for {
 		sess, err := ln.Accept()
 		if err != nil {
-			write(console, "TCP accept error: "+err.Error()+"\n")
-			return
+			errMsg := err.Error()
+			write(console, "TCP accept error: "+errMsg+"\n")
+			if isClosedListenerError(errMsg) {
+				write(console, "TCP listener closed; stopping accept loop\n")
+				return
+			}
+			write(console, "TCP accept retrying...\n")
+			time.Sleep(tcpAcceptRetryDelay)
+			continue
 		}
 		write(console, "TCP session from "+sess.RemoteAddr()+"\n")
 		runSessionREPL(bufio.NewReader(sess), sess, loader)
-		_ = sess.Close()
+		if err := sess.Close(); err != nil {
+			write(console, "TCP session close warning: "+err.Error()+"\n")
+		}
 		write(console, "TCP session ended\n")
 	}
+}
+
+func isClosedListenerError(msg string) bool {
+	m := strings.ToLower(msg)
+	return strings.Contains(m, "closed") || strings.Contains(m, "bad file descriptor")
+}
+
+func itoa(v int) string {
+	if v == 0 {
+		return "0"
+	}
+	if v < 0 {
+		return "-" + itoa(-v)
+	}
+	var b [12]byte
+	i := len(b)
+	for v > 0 {
+		i--
+		b[i] = byte('0' + (v % 10))
+		v /= 10
+	}
+	return string(b[i:])
 }
 
 // runSerialREPL runs the interactive REPL over the local USB console.

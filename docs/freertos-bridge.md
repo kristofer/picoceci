@@ -16,6 +16,51 @@ The bridge layer lives in `pkg/freertos/` and uses build constraints to swap bet
 
 ---
 
+## Bridge ABI v1 (ESP32-S3 IDF Bridge)
+
+This section defines the explicit ABI contract for the experimental ESP32-S3 IDF bridge path (`esp32s3_idf_bridge` build tag). The ABI is intentionally small and versioned to keep TinyGo-to-runtime boundaries stable as new services are added.
+
+### Contract rules
+
+1. Strings passed to bridge functions are UTF-8, NUL-terminated C strings.
+2. Empty password may be passed as `NULL` for open networks.
+3. `out_*` pointers are optional and may be `NULL` unless otherwise stated.
+4. Socket handles (`fd`) returned by listen/accept are bridge-owned kernel resources that must be closed with `picoceci_bridge_tcp_close`.
+5. `timeout_ms` is in milliseconds and currently uses polling with `vTaskDelay(pdMS_TO_TICKS(step_ms))`.
+6. Return code `0` is success for non-fd operations. Negative values are bridge-defined failures. Positive values are valid byte counts or file descriptors for socket operations.
+
+### ABI function table
+
+| Symbol | Purpose | Inputs | Outputs | Blocking | Ownership |
+|---|---|---|---|---|---|
+| `picoceci_bridge_wifi_stack_init` | Initialize NVS/netif/event-loop/WiFi defaults | none | `0` or `<0` | Non-blocking setup | Bridge owns global WiFi state |
+| `picoceci_bridge_wifi_connect` | Connect STA and wait for IP | `ssid`, `password`, `timeout_ms` | `0` or `<0`, optional `out_ip` (host-order IPv4) | Blocks until IP or timeout | Caller owns string buffers; bridge owns WiFi lifecycle |
+| `picoceci_bridge_wifi_disconnect` | Disconnect STA session | none | `0` or `<0` | Non-blocking best effort | Bridge retains WiFi init state |
+| `picoceci_bridge_tcp_listen` | Create/listen TCP server socket | `port` | `fd >= 0` or `<0` | Non-blocking setup | Caller must close returned fd |
+| `picoceci_bridge_tcp_accept` | Accept one TCP client | `server_fd` | `client_fd >= 0` or `<0`, optional `out_ip`, `out_port` | Blocking accept | Caller must close returned client fd |
+| `picoceci_bridge_tcp_recv` | Receive from connected socket | `fd`, `buf`, `len` | `n > 0`, `0` (EOF), `<0` error | Blocking according to socket mode | Caller owns buffer |
+| `picoceci_bridge_tcp_send` | Send to connected socket | `fd`, `buf`, `len` | `n > 0`, `0` (no-op), `<0` error | Blocking according to socket mode | Caller owns buffer |
+| `picoceci_bridge_tcp_close` | Close socket handle | `fd` | `0` or `<0` | Non-blocking | Releases bridge/kernel socket resource |
+
+### Bridge error mapping
+
+| Return code | Meaning | picoceci surface kind | Recommended message pattern |
+|---|---|---|---|
+| `-1` to `-6` | WiFi stack init phase failed | `NetworkError` | `bridge wifi stack init failed (rc=%d)` |
+| `-10` to `-15` | WiFi connect phase failed | `NetworkError` | `bridge wifi connect failed (rc=%d)` |
+| `-20` to `-21` | WiFi disconnect phase failed | `NetworkError` | `bridge wifi disconnect failed (rc=%d)` |
+| `-30` to `-32` | TCP listen setup failed | `IOError` | `bridge tcp listen failed (rc=%d)` |
+| `-40` | TCP accept failed | `IOError` | `bridge tcp accept failed (rc=%d)` |
+| `<0` from recv/send/close | Socket operation failed | `IOError` | `bridge tcp <op> failed (rc=%d)` |
+
+### Phase 2 prep notes
+
+1. Keep ABI additions append-only (`v1.x`) and avoid changing existing signatures.
+2. Add new services by introducing new `picoceci_bridge_*` symbols plus one manager-level adapter in Go.
+3. Preserve the same ownership/timeout/error table format for each newly added symbol.
+
+---
+
 ## Build constraint pattern
 
 ```go
