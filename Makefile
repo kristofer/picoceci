@@ -4,7 +4,7 @@ SHELL := /bin/bash
 	esp32-build esp32-flash esp32-monitor esp32-run esp32-image-info \
 	esp32-build-idf esp32-flash-idf esp32-run-idf \
 	esp32-verify-target-isolation \
-	esp32-tcp-bridge esp32-run-bridge \
+	esp32-tcp-bridge esp32-run-bridge esp32-clean \
 	_check_tinygo _check_port
 
 BINARY_NAME=picoceci
@@ -174,9 +174,14 @@ install: build
 	mkdir -p $(INSTALL_DIR)
 	cp $(BINARY_NAME) $(INSTALL_DIR)/
 
-clean:
+clean: esp32-clean
 	rm -f $(BINARY_NAME)
 	rm -f $(INSTALL_DIR)/$(BINARY_NAME)
+
+esp32-clean:
+	rm -rf $(ESP_BUILD_DIR)
+	rm -f $(ESP_IDF_BRIDGE_TARGET)
+	$(TINYGO) clean
 
 test:
 	go test ./...
