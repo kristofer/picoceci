@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/kristofer/picoceci/pkg/object"
+	"github.com/kristofer/picoceci/pkg/sdcard"
 )
 
 func callNoArgNative(t *testing.T, recv *object.Object, selector string) {
@@ -107,6 +109,99 @@ func TestInitialGlobalsWithSinks_HasPhase7Globals(t *testing.T) {
 		if globals[name] == nil {
 			t.Errorf("expected %q in globals, got nil", name)
 		}
+	}
+}
+
+func TestInitialGlobalsWithSinks_HasSDCardGlobals(t *testing.T) {
+	globals := InitialGlobalsWithSinks(GlobalSinks{})
+	for _, name := range []string{"SDCard", "File", "Directory", "Path"} {
+		if globals[name] == nil {
+			t.Errorf("expected %q in globals, got nil", name)
+		}
+	}
+}
+
+func TestSDCardGlobals_BasicFlow(t *testing.T) {
+	root := t.TempDir()
+	sdcard.SetRoot(root)
+	defer sdcard.Unmount()
+
+	globals := InitialGlobalsWithSinks(GlobalSinks{})
+	sdObj := globals["SDCard"]
+	fileObj := globals["File"]
+	dirObj := globals["Directory"]
+	pathObj := globals["Path"]
+
+	if sdObj == nil || fileObj == nil || dirObj == nil || pathObj == nil {
+		t.Fatal("expected SDCard/File/Directory/Path globals")
+	}
+
+	callOneArgNative(t, sdObj, "mount:", object.StringObject("/sdcard/"))
+
+	mountedM := sdObj.Methods["mounted"]
+	if mountedM == nil || mountedM.Native == nil {
+		t.Fatal("missing SDCard mounted method")
+	}
+	mounted, err := mountedM.Native(sdObj, nil)
+	if err != nil {
+		t.Fatalf("SDCard mounted failed: %v", err)
+	}
+	if mounted == nil || mounted.Kind != object.KindBool || !mounted.BVal {
+		t.Fatalf("SDCard mounted = %v, want true", mounted)
+	}
+
+	callOneArgNative(t, dirObj, "createAll:", object.StringObject("/sdcard/repl"))
+	callNative(t, fileObj, "write:to:", []*object.Object{object.StringObject("hello sd"), object.StringObject("/sdcard/repl/hello.txt")})
+
+	readM := fileObj.Methods["read:"]
+	if readM == nil || readM.Native == nil {
+		t.Fatal("missing File read: method")
+	}
+	text, err := readM.Native(fileObj, []*object.Object{object.StringObject("/sdcard/repl/hello.txt")})
+	if err != nil {
+		t.Fatalf("File read: failed: %v", err)
+	}
+	if text == nil || text.Kind != object.KindString || text.SVal != "hello sd" {
+		t.Fatalf("File read: = %v, want 'hello sd'", text)
+	}
+
+	entriesM := dirObj.Methods["entries:"]
+	if entriesM == nil || entriesM.Native == nil {
+		t.Fatal("missing Directory entries: method")
+	}
+	entries, err := entriesM.Native(dirObj, []*object.Object{object.StringObject("/sdcard/repl")})
+	if err != nil {
+		t.Fatalf("Directory entries: failed: %v", err)
+	}
+	if entries == nil || entries.Kind != object.KindArray || len(entries.Items) != 1 {
+		t.Fatalf("Directory entries: = %v, want one entry", entries)
+	}
+	if entries.Items[0] == nil || entries.Items[0].Kind != object.KindString || entries.Items[0].SVal != "hello.txt" {
+		t.Fatalf("Directory entries: first = %v, want 'hello.txt'", entries.Items[0])
+	}
+
+	fromM := pathObj.Methods["from:"]
+	if fromM == nil || fromM.Native == nil {
+		t.Fatal("missing Path from: method")
+	}
+	p, err := fromM.Native(pathObj, []*object.Object{object.StringObject("/sdcard/repl/hello.txt")})
+	if err != nil {
+		t.Fatalf("Path from: failed: %v", err)
+	}
+	baseM := p.Methods["basename"]
+	if baseM == nil || baseM.Native == nil {
+		t.Fatal("missing Path basename method")
+	}
+	base, err := baseM.Native(p, nil)
+	if err != nil {
+		t.Fatalf("Path basename failed: %v", err)
+	}
+	if base == nil || base.Kind != object.KindString || base.SVal != "hello.txt" {
+		t.Fatalf("Path basename = %v, want 'hello.txt'", base)
+	}
+
+	if _, err := os.Stat(root + "/repl/hello.txt"); err != nil {
+		t.Fatalf("expected host file created in stub root: %v", err)
 	}
 }
 

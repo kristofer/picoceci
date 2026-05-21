@@ -12,6 +12,7 @@ import (
 	"github.com/kristofer/picoceci/pkg/freertos"
 	picnet "github.com/kristofer/picoceci/pkg/net"
 	"github.com/kristofer/picoceci/pkg/object"
+	"github.com/kristofer/picoceci/pkg/sdcard"
 )
 
 // BlockCaller is an interface that allows builtins to invoke blocks.
@@ -130,6 +131,10 @@ func InitialGlobalsWithSinks(sinks GlobalSinks) map[string]*object.Object {
 		ledDriver = noopLEDDriver{}
 	}
 	globals["LED"] = makeLEDObject(ledDriver)
+	globals["SDCard"] = makeSDCardObject()
+	globals["File"] = makeFileClass()
+	globals["Directory"] = makeDirectoryClass()
+	globals["Path"] = makePathClass()
 
 	// Timestamp class — milliseconds since boot.
 	globals["Timestamp"] = makeTimestampClass()
@@ -755,6 +760,444 @@ func makeLEDObject(driver LEDDriver) *object.Object {
 	}}
 
 	return o
+}
+
+// ---------------------------------------------------------------------------
+// SDCard / File / Directory / Path globals
+// ---------------------------------------------------------------------------
+
+const sdcardRootPath = "/sdcard/"
+
+func makeSDCardObject() *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+	}
+
+	o.Methods["mounted"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.BoolObject(sdcard.IsMounted()), nil
+	}}
+
+	o.Methods["status"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		if sdcard.IsMounted() {
+			return object.SymbolObject("mounted"), nil
+		}
+		return object.SymbolObject("notMounted"), nil
+	}}
+
+	o.Methods["root"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject(sdcardRootPath), nil
+	}}
+
+	o.Methods["mount:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		mountPoint, err := requireStringArg(args, 0, "SDCard mount: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		if err := sdcard.Mount(mountPoint); err != nil {
+			return nil, ioError("SDCard mount: " + err.Error())
+		}
+		return object.Nil, nil
+	}}
+
+	o.Methods["unmount"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		if err := sdcard.Unmount(); err != nil {
+			return nil, ioError("SDCard unmount: " + err.Error())
+		}
+		return object.Nil, nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("SDCard"), nil
+	}}
+
+	return o
+}
+
+func makeFileClass() *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+	}
+
+	o.Methods["exists:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "File exists: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		fsys, err := requireSDCardFS()
+		if err != nil {
+			return nil, err
+		}
+		if !fsys.Exists(path) {
+			return object.False, nil
+		}
+		info, statErr := fsys.Stat(path)
+		if statErr != nil {
+			return object.False, nil
+		}
+		return object.BoolObject(!info.IsDir()), nil
+	}}
+
+	o.Methods["read:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "File read: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		data, err := sdcard.ReadFile(path)
+		if err != nil {
+			return nil, ioError("File read: " + err.Error())
+		}
+		return object.StringObject(string(data)), nil
+	}}
+
+	o.Methods["write:to:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		data, err := requireBytesArg(args, 0, "File write:to: first argument must be a String or ByteArray")
+		if err != nil {
+			return nil, err
+		}
+		path, err := requireStringArg(args, 1, "File write:to: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		if err := sdcard.WriteFile(path, data); err != nil {
+			return nil, ioError("File write:to: " + err.Error())
+		}
+		return self, nil
+	}}
+
+	// write:data: is the natural keyword-message form: path first, data second.
+	o.Methods["write:data:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "File write:data: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		data, err := requireBytesArg(args, 1, "File write:data: data must be a String or ByteArray")
+		if err != nil {
+			return nil, err
+		}
+		if err := sdcard.WriteFile(path, data); err != nil {
+			return nil, ioError("File write:data: " + err.Error())
+		}
+		return self, nil
+	}}
+
+	o.Methods["append:to:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		data, err := requireBytesArg(args, 0, "File append:to: first argument must be a String or ByteArray")
+		if err != nil {
+			return nil, err
+		}
+		path, err := requireStringArg(args, 1, "File append:to: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		fsys, err := requireSDCardFS()
+		if err != nil {
+			return nil, err
+		}
+		f, openErr := fsys.Open(path, sdcard.ModeAppend)
+		if openErr != nil {
+			return nil, ioError("File append:to: " + openErr.Error())
+		}
+		defer f.Close()
+		if _, writeErr := f.Write(data); writeErr != nil {
+			return nil, ioError("File append:to: " + writeErr.Error())
+		}
+		return self, nil
+	}}
+
+	o.Methods["delete:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "File delete: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		fsys, err := requireSDCardFS()
+		if err != nil {
+			return nil, err
+		}
+		if err := fsys.Remove(path); err != nil {
+			return nil, ioError("File delete: " + err.Error())
+		}
+		return self, nil
+	}}
+
+	o.Methods["move:to:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		oldPath, err := requireStringArg(args, 0, "File move:to: source path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		newPath, err := requireStringArg(args, 1, "File move:to: destination path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		fsys, err := requireSDCardFS()
+		if err != nil {
+			return nil, err
+		}
+		if err := fsys.Rename(oldPath, newPath); err != nil {
+			return nil, ioError("File move:to: " + err.Error())
+		}
+		return self, nil
+	}}
+
+	o.Methods["size:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "File size: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		fsys, err := requireSDCardFS()
+		if err != nil {
+			return nil, err
+		}
+		info, err := fsys.Stat(path)
+		if err != nil {
+			return nil, ioError("File size: " + err.Error())
+		}
+		return object.IntObject(info.Size()), nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("File"), nil
+	}}
+
+	return o
+}
+
+func makeDirectoryClass() *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+	}
+
+	o.Methods["entries:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "Directory entries: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		fsys, err := requireSDCardFS()
+		if err != nil {
+			return nil, err
+		}
+		entries, err := fsys.ReadDir(path)
+		if err != nil {
+			return nil, ioError("Directory entries: " + err.Error())
+		}
+		items := make([]*object.Object, len(entries))
+		for i, entry := range entries {
+			items[i] = object.StringObject(entry.Name())
+		}
+		return &object.Object{Kind: object.KindArray, Items: items}, nil
+	}}
+
+	o.Methods["exists:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "Directory exists: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		fsys, err := requireSDCardFS()
+		if err != nil {
+			return nil, err
+		}
+		if !fsys.Exists(path) {
+			return object.False, nil
+		}
+		info, statErr := fsys.Stat(path)
+		if statErr != nil {
+			return object.False, nil
+		}
+		return object.BoolObject(info.IsDir()), nil
+	}}
+
+	o.Methods["create:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "Directory create: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		fsys, err := requireSDCardFS()
+		if err != nil {
+			return nil, err
+		}
+		if err := fsys.Mkdir(path); err != nil {
+			return nil, ioError("Directory create: " + err.Error())
+		}
+		return self, nil
+	}}
+
+	o.Methods["createAll:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "Directory createAll: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		fsys, err := requireSDCardFS()
+		if err != nil {
+			return nil, err
+		}
+		if err := fsys.MkdirAll(path); err != nil {
+			return nil, ioError("Directory createAll: " + err.Error())
+		}
+		return self, nil
+	}}
+
+	o.Methods["delete:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "Directory delete: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		fsys, err := requireSDCardFS()
+		if err != nil {
+			return nil, err
+		}
+		if err := fsys.Remove(path); err != nil {
+			return nil, ioError("Directory delete: " + err.Error())
+		}
+		return self, nil
+	}}
+
+	o.Methods["deleteAll:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "Directory deleteAll: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		fsys, err := requireSDCardFS()
+		if err != nil {
+			return nil, err
+		}
+		if err := fsys.RemoveAll(path); err != nil {
+			return nil, ioError("Directory deleteAll: " + err.Error())
+		}
+		return self, nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("Directory"), nil
+	}}
+
+	return o
+}
+
+func makePathClass() *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+	}
+
+	o.Methods["from:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "Path from: argument must be a String")
+		if err != nil {
+			return nil, err
+		}
+		return makePathObject(sdcard.PathFrom(path)), nil
+	}}
+
+	o.Methods["exists:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		path, err := requireStringArg(args, 0, "Path exists: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		fsys, err := requireSDCardFS()
+		if err != nil {
+			return nil, err
+		}
+		return object.BoolObject(fsys.Exists(path)), nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("Path"), nil
+	}}
+
+	return o
+}
+
+func makePathObject(path *sdcard.Path) *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+		Env:     path,
+	}
+
+	o.Methods["basename"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject(self.Env.(*sdcard.Path).Basename()), nil
+	}}
+
+	o.Methods["dirname"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		return makePathObject(self.Env.(*sdcard.Path).Dirname()), nil
+	}}
+
+	o.Methods["extension"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject(self.Env.(*sdcard.Path).Extension()), nil
+	}}
+
+	o.Methods["stem"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject(self.Env.(*sdcard.Path).Stem()), nil
+	}}
+
+	o.Methods["asString"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject(self.Env.(*sdcard.Path).String()), nil
+	}}
+
+	o.Methods["isAbsolute"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.BoolObject(self.Env.(*sdcard.Path).IsAbsolute()), nil
+	}}
+
+	o.Methods["/"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		child, err := requireStringArg(args, 0, "Path / argument must be a String")
+		if err != nil {
+			return nil, err
+		}
+		return makePathObject(self.Env.(*sdcard.Path).Join(child)), nil
+	}}
+
+	o.Methods[","] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		suffix, err := requireStringArg(args, 0, "Path , argument must be a String")
+		if err != nil {
+			return nil, err
+		}
+		return makePathObject(self.Env.(*sdcard.Path).WithSuffix(suffix)), nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject(self.Env.(*sdcard.Path).String()), nil
+	}}
+
+	return o
+}
+
+func requireSDCardFS() (sdcard.FileSystem, error) {
+	fsys := sdcard.FS()
+	if fsys == nil {
+		return nil, ioError("SD card is not mounted")
+	}
+	return fsys, nil
+}
+
+func requireStringArg(args []*object.Object, idx int, message string) (string, error) {
+	if idx >= len(args) || args[idx] == nil || args[idx].Kind != object.KindString {
+		return "", &Error{Kind: "IOError", Message: message, Pos: ast.Pos{Line: 1, Col: 1}}
+	}
+	return args[idx].SVal, nil
+}
+
+func requireBytesArg(args []*object.Object, idx int, message string) ([]byte, error) {
+	if idx >= len(args) || args[idx] == nil {
+		return nil, &Error{Kind: "IOError", Message: message, Pos: ast.Pos{Line: 1, Col: 1}}
+	}
+	switch args[idx].Kind {
+	case object.KindString:
+		return []byte(args[idx].SVal), nil
+	case object.KindByteArray:
+		return append([]byte(nil), args[idx].Bytes...), nil
+	default:
+		return nil, &Error{Kind: "IOError", Message: message, Pos: ast.Pos{Line: 1, Col: 1}}
+	}
+}
+
+func ioError(message string) *Error {
+	return &Error{Kind: "IOError", Message: message, Pos: ast.Pos{Line: 1, Col: 1}}
 }
 
 // ---------------------------------------------------------------------------

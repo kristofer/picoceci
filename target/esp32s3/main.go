@@ -412,7 +412,7 @@ func handleMetaCommand(w io.Writer, line string, state *vmState) bool {
 		writeStr(w, "meta-commands: .globals  .help  .version\n")
 		return true
 	case ".version":
-		writeStr(w, "picoceci v: 1.5.20\n")
+		writeStr(w, "picoceci "+version+"\n")
 		return true
 	}
 	return false
