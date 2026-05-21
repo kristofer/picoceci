@@ -234,6 +234,10 @@ func runSerialREPL(console tinygo.Console, loader *module.Loader, wifiMgr *picne
 			continue
 		}
 
+		if handleMetaCommand(console, line, state) {
+			continue
+		}
+
 		execSource(console, line, state)
 	}
 }
@@ -296,6 +300,10 @@ func runSessionREPL(r io.Reader, w io.Writer, loader *module.Loader, wifiMgr *pi
 		}
 
 		if line == "" {
+			continue
+		}
+
+		if handleMetaCommand(w, line, state) {
 			continue
 		}
 
@@ -384,4 +392,24 @@ func write(c tinygo.Console, s string) {
 // writeStr is a helper to write a string to any io.Writer.
 func writeStr(w io.Writer, s string) {
 	_, _ = io.WriteString(w, s)
+}
+
+// handleMetaCommand processes REPL meta-commands that begin with ".".
+// Returns true if the line was a meta-command and has been handled.
+//
+//	.globals   – list all global names currently in the VM state
+//	.help      – show available meta-commands
+func handleMetaCommand(w io.Writer, line string, state *vmState) bool {
+	switch line {
+	case ".globals":
+		writeStr(w, "globals ("+itoa(len(state.globals))+"):\n")
+		for name := range state.globals {
+			writeStr(w, "  "+name+"\n")
+		}
+		return true
+	case ".help":
+		writeStr(w, "meta-commands: .globals  .help\n")
+		return true
+	}
+	return false
 }
