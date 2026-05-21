@@ -112,7 +112,7 @@ func main() {
 		} else {
 			tcpListener = ln
 			write(console, "TCP REPL on :"+itoa(wifiPort)+"\n")
-			go acceptLoop(console, tcpListener, loader, led)
+			go acceptLoop(console, tcpListener, loader, wifiMgr, led)
 		}
 	} else {
 		write(console, "TCP REPL disabled: WiFi state="+wifiMgr.Status().String()+"\n")
@@ -122,7 +122,7 @@ func main() {
 	write(console, "Ready.\n\n")
 
 	// Start serial REPL using the console's line reader so typed input echoes.
-	runSerialREPL(console, loader, led)
+	runSerialREPL(console, loader, wifiMgr, led)
 }
 
 // waitForSerialReady waits until input appears on USB serial or timeout elapses.
@@ -141,7 +141,7 @@ func waitForSerialReady(console tinygo.Console, timeout time.Duration) bool {
 // acceptLoop accepts one TCP connection at a time and runs a REPL on it.
 // On disconnect it loops back and waits for the next connection.
 // The serial Console always remains available for local recovery.
-func acceptLoop(console tinygo.Console, ln picnet.Listener, loader *module.Loader, led tinygo.LED) {
+func acceptLoop(console tinygo.Console, ln picnet.Listener, loader *module.Loader, wifiMgr *picnet.Manager, led tinygo.LED) {
 	for {
 		sess, err := ln.Accept()
 		if err != nil {
@@ -156,7 +156,7 @@ func acceptLoop(console tinygo.Console, ln picnet.Listener, loader *module.Loade
 			continue
 		}
 		write(console, "TCP session from "+sess.RemoteAddr()+"\n")
-		runSessionREPL(bufio.NewReader(sess), sess, loader, led)
+		runSessionREPL(bufio.NewReader(sess), sess, loader, wifiMgr, led)
 		if err := sess.Close(); err != nil {
 			write(console, "TCP session close warning: "+err.Error()+"\n")
 		}
@@ -189,7 +189,8 @@ func itoa(v int) string {
 // runSerialREPL runs the interactive REPL over the local USB console.
 // It uses the console's built-in line reader so typed characters echo and
 // backspace/enter behave naturally on the serial terminal.
-func runSerialREPL(console tinygo.Console, loader *module.Loader, led tinygo.LED) {
+func runSerialREPL(console tinygo.Console, loader *module.Loader, wifiMgr *picnet.Manager, led tinygo.LED) {
+	state := newVMState(console, loader, wifiMgr, led)
 	var buf strings.Builder
 	inPaste := false
 
@@ -217,7 +218,7 @@ func runSerialREPL(console tinygo.Console, loader *module.Loader, led tinygo.LED
 				src := buf.String()
 				buf.Reset()
 				if src != "" {
-					execSource(console, src, loader, led)
+					execSource(console, src, state)
 				}
 			}
 			continue
@@ -233,25 +234,27 @@ func runSerialREPL(console tinygo.Console, loader *module.Loader, led tinygo.LED
 			continue
 		}
 
-		execSource(console, line, loader, led)
+		execSource(console, line, state)
 	}
 }
 
 // runSessionREPL runs the interactive REPL for TCP sessions.
 // r is the input source; w receives output (Transcript + prompts + results).
-// Uses fresh VM per expression to minimize memory accumulation.
+// Globals and compiled blocks persist across evaluations within the session
+// to retain state (variable assignments, custom methods, etc.).
 //
 // Paste mode: type "---" alone on a line to enter paste mode; all
 // subsequent lines are buffered.  Type "---" again to execute the
 // buffered program as a single unit.  This lets you paste multi-line
 // programs over the USB serial interface without triggering a parse
 // error on every incomplete line.
-func runSessionREPL(r io.Reader, w io.Writer, loader *module.Loader, led tinygo.LED) {
+func runSessionREPL(r io.Reader, w io.Writer, loader *module.Loader, wifiMgr *picnet.Manager, led tinygo.LED) {
 	br, ok := r.(*bufio.Reader)
 	if !ok {
 		br = bufio.NewReader(r)
 	}
 
+	state := newVMState(w, loader, wifiMgr, led)
 	var buf strings.Builder
 	inPaste := false
 
@@ -280,7 +283,7 @@ func runSessionREPL(r io.Reader, w io.Writer, loader *module.Loader, led tinygo.
 				src := buf.String()
 				buf.Reset()
 				if src != "" {
-					execSource(w, src, loader, led)
+					execSource(w, src, state)
 				}
 			}
 			continue
@@ -296,13 +299,42 @@ func runSessionREPL(r io.Reader, w io.Writer, loader *module.Loader, led tinygo.
 			continue
 		}
 
-		execSource(w, line, loader, led)
+		execSource(w, line, state)
+	}
+}
+
+// vmState holds persistent REPL state (globals and compiled blocks) across
+// multiple expression evaluations within a single REPL session.
+// This mirrors the desktop cmd/picoceci/main.go pattern and ensures that
+// globals like LED, Wifi, Task, etc. are initialised exactly once per session.
+type vmState struct {
+	globals map[string]*object.Object
+	blocks  []*bytecode.CompiledBlock
+	loader  *module.Loader
+}
+
+// newVMState initialises a vmState with fully-wired sinks.  It calls
+// NewVMWithSinks exactly once so that picnet.NewManager() and all other
+// singleton allocations occur a single time rather than on every evaluation.
+func newVMState(w io.Writer, loader *module.Loader, wifiMgr *picnet.Manager, led tinygo.LED) *vmState {
+	vm := bytecode.NewVMWithSinks(eval.GlobalSinks{
+		ConsoleWriter:    w,
+		TranscriptWriter: w,
+		WifiManager:      wifiMgr,
+		LEDDriver:        led,
+	})
+	return &vmState{
+		globals: vm.Globals(),
+		blocks:  make([]*bytecode.CompiledBlock, 0),
+		loader:  loader,
 	}
 }
 
 // execSource parses, compiles, and runs src, writing results to w.
-// Both Console and Transcript are wired to w so remote sessions see all output.
-func execSource(w io.Writer, src string, loader *module.Loader, led tinygo.LED) {
+// It uses state.globals so all session singletons (LED, Wifi, Task, …) are
+// available, and persists any new globals/blocks back into state so the next
+// call sees them.
+func execSource(w io.Writer, src string, state *vmState) {
 	// Parse
 	l := lexer.NewString(src)
 	p := parser.New(l)
@@ -312,21 +344,18 @@ func execSource(w io.Writer, src string, loader *module.Loader, led tinygo.LED) 
 		return
 	}
 
-	// Compile
-	c := bytecode.NewCompilerWithLoader(loader)
+	// Compile with accumulated blocks; top-level vars become globals.
+	c := bytecode.NewCompilerWithLoader(state.loader)
+	c.SetBlocks(state.blocks)
+	c.SetTopLevelVarsAreGlobals(true)
 	chunk, err := c.Compile(prog.Statements)
 	if err != nil {
 		writeStr(w, "compile: "+err.Error()+"\n")
 		return
 	}
 
-	// Run with fresh VM each time.
-	// Transcript is bound to w (the active session or serial console).
-	vm := bytecode.NewVMWithSinks(eval.GlobalSinks{
-		ConsoleWriter:    w,
-		TranscriptWriter: w,
-		LEDDriver:        led,
-	})
+	// Run using persistent globals – avoids redundant InitialGlobalsWithSinks.
+	vm := bytecode.NewVMWithGlobals(state.globals)
 	vm.SetBlocks(c.GetBlocks())
 	vm.AddGlobals(c.GetGlobals())
 	result, err := vm.Run(chunk)
@@ -334,6 +363,12 @@ func execSource(w io.Writer, src string, loader *module.Loader, led tinygo.LED) 
 		writeStr(w, "error: "+err.Error()+"\n")
 		return
 	}
+
+	// Persist updated globals and blocks for next call.
+	for name, val := range vm.Globals() {
+		state.globals[name] = val
+	}
+	state.blocks = c.GetBlocks()
 
 	// Print result
 	if result != nil {
