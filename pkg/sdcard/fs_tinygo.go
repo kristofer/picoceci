@@ -78,8 +78,8 @@ func (d *sdBlockDevice) Size() int64 {
 	return sz
 }
 
-func (d *sdBlockDevice) WriteBlockSize() int64  { return 512 }
-func (d *sdBlockDevice) EraseBlockSize() int64  { return 512 }
+func (d *sdBlockDevice) WriteBlockSize() int64                 { return 512 }
+func (d *sdBlockDevice) EraseBlockSize() int64                 { return 512 }
 func (d *sdBlockDevice) EraseBlocks(start, length int64) error { return nil }
 
 type tinygoFile struct {
