@@ -385,6 +385,63 @@ Summary:
 - `Semaphore` — FreeRTOS binary / counting / mutex semaphore
 - `Timer` — FreeRTOS software timer
 - `Channel` — higher-level typed channel (built on Queue)
+- `TaskSupervisor` — crash/restart supervisor for picoceci blocks
+
+---
+
+## Module: `tasksupervisor`
+
+`TaskSupervisor` is a singleton that runs picoceci blocks in goroutines and
+automatically restarts them if they terminate with an error.
+
+| Message | Description |
+|---|---|
+| `TaskSupervisor supervise: aBlock name: aString` | Run block; restart on error (stop on clean exit) |
+| `TaskSupervisor supervise: aBlock name: aString maxRestarts: n` | Restart on error up to n times; stop on clean exit |
+
+`TaskSupervisor` shares the `SetTaskCaller` wiring with `Task` — both become
+available after the interpreter or VM is initialised.
+
+---
+
+## Module: `timestamp`
+
+`Timestamp` is a class singleton for capturing boot-relative times.
+`Duration` is the result of subtracting two Timestamps, or can be created directly.
+
+```picoceci
+| t1 t2 elapsed |
+t1 := Timestamp now.
+"... do work ..."
+t2 := Timestamp now.
+elapsed := t2 - t1.
+Console println: elapsed printString.   "=> '42ms' or '1.500s'"
+
+| d |
+d := Duration ms: 500.
+Console println: d asSeconds printString.   "=> 0.5"
+```
+
+**Timestamp messages:**
+
+| Message | Description |
+|---|---|
+| `Timestamp now` | Returns a Timestamp instance at the current millisecond tick |
+| `ts asMilliseconds` | Milliseconds since boot as Integer |
+| `ts1 - ts2` | Returns a Duration (ts1 − ts2) |
+| `ts1 < ts2`, `ts1 > ts2`, `ts1 = ts2` | Timestamp comparisons |
+| `ts printString` | `'Timestamp(1234ms)'` |
+
+**Duration messages:**
+
+| Message | Description |
+|---|---|
+| `Duration ms: n` | Create a Duration of n milliseconds |
+| `dur asMilliseconds` | Integer milliseconds |
+| `dur asSeconds` | Float seconds |
+| `dur1 + dur2`, `dur1 - dur2` | Duration arithmetic |
+| `dur1 < dur2`, `dur1 > dur2`, `dur1 = dur2` | Duration comparisons |
+| `dur printString` | `'42ms'` or `'1.500s'` |
 
 ---
 
