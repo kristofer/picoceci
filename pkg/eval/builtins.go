@@ -32,6 +32,11 @@ type LEDDriver interface {
 	On()
 	Off()
 	Toggle()
+	Red()
+	Green()
+	Blue()
+	White()
+	RGB(r, g, b uint8)
 	BlinkEvery(ms int)
 	StopBlink()
 }
@@ -39,11 +44,16 @@ type LEDDriver interface {
 // noopLEDDriver is a silent LED stub used on desktop when no driver is injected.
 type noopLEDDriver struct{}
 
-func (noopLEDDriver) On()              {}
-func (noopLEDDriver) Off()             {}
-func (noopLEDDriver) Toggle()          {}
-func (noopLEDDriver) BlinkEvery(_ int) {}
-func (noopLEDDriver) StopBlink()       {}
+func (noopLEDDriver) On()               {}
+func (noopLEDDriver) Off()              {}
+func (noopLEDDriver) Toggle()           {}
+func (noopLEDDriver) Red()              {}
+func (noopLEDDriver) Green()            {}
+func (noopLEDDriver) Blue()             {}
+func (noopLEDDriver) White()            {}
+func (noopLEDDriver) RGB(_, _, _ uint8) {}
+func (noopLEDDriver) BlinkEvery(_ int)  {}
+func (noopLEDDriver) StopBlink()        {}
 
 // GlobalSinks configures output destinations for built-in global objects.
 // Console and Transcript can be routed independently.
@@ -688,6 +698,41 @@ func makeLEDObject(driver LEDDriver) *object.Object {
 
 	o.Methods["toggle"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
 		self.Env.(LEDDriver).Toggle()
+		return object.Nil, nil
+	}}
+
+	o.Methods["red"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		self.Env.(LEDDriver).Red()
+		return object.Nil, nil
+	}}
+
+	o.Methods["green"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		self.Env.(LEDDriver).Green()
+		return object.Nil, nil
+	}}
+
+	o.Methods["blue"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		self.Env.(LEDDriver).Blue()
+		return object.Nil, nil
+	}}
+
+	o.Methods["white"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		self.Env.(LEDDriver).White()
+		return object.Nil, nil
+	}}
+
+	o.Methods["rgb:green:blue:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		if len(args) != 3 {
+			return nil, &Error{Kind: "LEDError", Message: "LED rgb:green:blue: requires three Integer arguments (0-255)", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		vals := [3]uint8{}
+		for i, arg := range args {
+			if arg == nil || arg.Kind != object.KindSmallInt || arg.IVal < 0 || arg.IVal > 255 {
+				return nil, &Error{Kind: "LEDError", Message: "LED rgb:green:blue: arguments must be Integers in 0-255", Pos: ast.Pos{Line: 1, Col: 1}}
+			}
+			vals[i] = uint8(arg.IVal)
+		}
+		self.Env.(LEDDriver).RGB(vals[0], vals[1], vals[2])
 		return object.Nil, nil
 	}}
 

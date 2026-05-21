@@ -11,6 +11,9 @@ import (
 type stubLED struct {
 	mu   sync.Mutex
 	on   bool
+	r    uint8
+	g    uint8
+	b    uint8
 	stop chan struct{}
 }
 
@@ -34,6 +37,41 @@ func (l *stubLED) Toggle() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.on = !l.on
+}
+
+func (l *stubLED) Red() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.on = true
+	l.r, l.g, l.b = 0xff, 0x00, 0x00
+}
+
+func (l *stubLED) Green() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.on = true
+	l.r, l.g, l.b = 0x00, 0xff, 0x00
+}
+
+func (l *stubLED) Blue() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.on = true
+	l.r, l.g, l.b = 0x00, 0x00, 0xff
+}
+
+func (l *stubLED) White() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.on = true
+	l.r, l.g, l.b = 0xff, 0xff, 0xff
+}
+
+func (l *stubLED) RGB(r, g, b uint8) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.on = true
+	l.r, l.g, l.b = r, g, b
 }
 
 func (l *stubLED) BlinkEvery(ms int) {

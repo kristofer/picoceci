@@ -25,6 +25,7 @@ import (
 	"github.com/kristofer/picoceci/pkg/lexer"
 	"github.com/kristofer/picoceci/pkg/module"
 	picnet "github.com/kristofer/picoceci/pkg/net"
+	"github.com/kristofer/picoceci/pkg/object"
 	"github.com/kristofer/picoceci/pkg/parser"
 	"github.com/kristofer/picoceci/pkg/sdcard"
 	"github.com/kristofer/picoceci/pkg/tinygo"
@@ -408,7 +409,10 @@ func handleMetaCommand(w io.Writer, line string, state *vmState) bool {
 		}
 		return true
 	case ".help":
-		writeStr(w, "meta-commands: .globals  .help\n")
+		writeStr(w, "meta-commands: .globals  .help  .version\n")
+		return true
+	case ".version":
+		writeStr(w, "picoceci v: 1.5.20\n")
 		return true
 	}
 	return false

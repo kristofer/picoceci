@@ -1,4 +1,4 @@
-//go:build tinygo
+//go:build tinygo && !esp32s3_n16r8
 
 package tinygo
 
@@ -7,27 +7,39 @@ import (
 	"time"
 )
 
-// boardLED drives machine.LED on the ESP32-S3 board.
+// boardLED drives a board LED pin when available.
 type boardLED struct {
 	pin  machine.Pin
 	stop chan struct{}
 }
 
 func newLED() LED {
-	p := machine.LED
-	p.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	// Targets without an explicit board pin mapping use NoPin as a safe no-op fallback.
+	p := machine.NoPin
+	if p != machine.NoPin {
+		p.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	}
 	return &boardLED{pin: p}
 }
 
 func (l *boardLED) On() {
+	if l.pin == machine.NoPin {
+		return
+	}
 	l.pin.High()
 }
 
 func (l *boardLED) Off() {
+	if l.pin == machine.NoPin {
+		return
+	}
 	l.pin.Low()
 }
 
 func (l *boardLED) Toggle() {
+	if l.pin == machine.NoPin {
+		return
+	}
 	l.pin.Set(!l.pin.Get())
 }
 

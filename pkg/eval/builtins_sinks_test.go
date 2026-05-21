@@ -34,6 +34,17 @@ func callOneArgNative(t *testing.T, recv *object.Object, selector string, arg *o
 	}
 }
 
+func callNative(t *testing.T, recv *object.Object, selector string, args []*object.Object) {
+	t.Helper()
+	m, ok := recv.Methods[selector]
+	if !ok || m == nil || m.Native == nil {
+		t.Fatalf("missing native method %q", selector)
+	}
+	if _, err := m.Native(recv, args); err != nil {
+		t.Fatalf("call %q failed: %v", selector, err)
+	}
+}
+
 func TestInitialGlobalsWithSinks_SplitConsoleAndTranscript(t *testing.T) {
 	var consoleBuf bytes.Buffer
 	var transcriptBuf bytes.Buffer
@@ -318,9 +329,16 @@ type recordingLEDDriver struct {
 	calls []string
 }
 
-func (r *recordingLEDDriver) On()              { r.calls = append(r.calls, "on") }
-func (r *recordingLEDDriver) Off()             { r.calls = append(r.calls, "off") }
-func (r *recordingLEDDriver) Toggle()          { r.calls = append(r.calls, "toggle") }
+func (r *recordingLEDDriver) On()     { r.calls = append(r.calls, "on") }
+func (r *recordingLEDDriver) Off()    { r.calls = append(r.calls, "off") }
+func (r *recordingLEDDriver) Toggle() { r.calls = append(r.calls, "toggle") }
+func (r *recordingLEDDriver) Red()    { r.calls = append(r.calls, "red") }
+func (r *recordingLEDDriver) Green()  { r.calls = append(r.calls, "green") }
+func (r *recordingLEDDriver) Blue()   { r.calls = append(r.calls, "blue") }
+func (r *recordingLEDDriver) White()  { r.calls = append(r.calls, "white") }
+func (r *recordingLEDDriver) RGB(red, green, blue uint8) {
+	r.calls = append(r.calls, fmt.Sprintf("rgb:%d:%d:%d", red, green, blue))
+}
 func (r *recordingLEDDriver) BlinkEvery(ms int) {
 	r.calls = append(r.calls, fmt.Sprintf("blink:%d", ms))
 }
@@ -337,10 +355,15 @@ func TestLEDGlobal_Methods(t *testing.T) {
 	callNoArgNative(t, led, "on")
 	callNoArgNative(t, led, "off")
 	callNoArgNative(t, led, "toggle")
+	callNoArgNative(t, led, "red")
+	callNoArgNative(t, led, "green")
+	callNoArgNative(t, led, "blue")
+	callNoArgNative(t, led, "white")
+	callNative(t, led, "rgb:green:blue:", []*object.Object{object.IntObject(1), object.IntObject(2), object.IntObject(3)})
 	callOneArgNative(t, led, "blinkEvery:", object.IntObject(500))
 	callNoArgNative(t, led, "stopBlink")
 
-	want := []string{"on", "off", "toggle", "blink:500", "stopBlink"}
+	want := []string{"on", "off", "toggle", "red", "green", "blue", "white", "rgb:1:2:3", "blink:500", "stopBlink"}
 	for i, w := range want {
 		if i >= len(rec.calls) || rec.calls[i] != w {
 			t.Errorf("calls[%d] = %q, want %q (all calls: %v)", i, rec.calls[i], w, rec.calls)
