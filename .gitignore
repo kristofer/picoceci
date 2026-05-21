@@ -11,6 +11,6 @@
 *.swp
 *.swo
 
-# Test helpers
-/testdata/sdcard/*
-!/testdata/sdcard/.gitkeep
+# Test helpers — allow integration test fixtures, ignore runtime-generated content
+/testdata/sdcard/runtime/
+testdata/sdcard/.gitkeep

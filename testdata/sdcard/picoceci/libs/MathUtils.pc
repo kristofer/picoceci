@@ -1,0 +1,15 @@
+" MathUtils - math utility object for SD card integration tests "
+
+object MathUtils {
+	| result: Int |
+
+	square: n [
+		result := n * n.
+		^ result
+	]
+
+	cube: n [
+		result := n * n * n.
+		^ result
+	]
+}
