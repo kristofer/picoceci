@@ -54,6 +54,12 @@ func main() {
 	write(console, "boot: console initialized\n")
 	write(console, "boot: network mode "+runtimeNetworkMode()+"\n")
 
+	// Initialize board LED
+	led := tinygo.NewLED()
+	led.On() // blink once to confirm LED is wired
+	time.Sleep(100 * time.Millisecond)
+	led.Off()
+
 	// Wait for USB CDC host traffic (if any), but never block boot forever.
 	if waitForSerialReady(console, startupSerialReadyTimeout) {
 		write(console, "boot: usb host activity detected\n")
@@ -106,7 +112,7 @@ func main() {
 		} else {
 			tcpListener = ln
 			write(console, "TCP REPL on :"+itoa(wifiPort)+"\n")
-			go acceptLoop(console, tcpListener, loader)
+			go acceptLoop(console, tcpListener, loader, led)
 		}
 	} else {
 		write(console, "TCP REPL disabled: WiFi state="+wifiMgr.Status().String()+"\n")
@@ -116,7 +122,7 @@ func main() {
 	write(console, "Ready.\n\n")
 
 	// Start serial REPL using the console's line reader so typed input echoes.
-	runSerialREPL(console, loader)
+	runSerialREPL(console, loader, led)
 }
 
 // waitForSerialReady waits until input appears on USB serial or timeout elapses.
@@ -135,7 +141,7 @@ func waitForSerialReady(console tinygo.Console, timeout time.Duration) bool {
 // acceptLoop accepts one TCP connection at a time and runs a REPL on it.
 // On disconnect it loops back and waits for the next connection.
 // The serial Console always remains available for local recovery.
-func acceptLoop(console tinygo.Console, ln picnet.Listener, loader *module.Loader) {
+func acceptLoop(console tinygo.Console, ln picnet.Listener, loader *module.Loader, led tinygo.LED) {
 	for {
 		sess, err := ln.Accept()
 		if err != nil {
@@ -150,7 +156,7 @@ func acceptLoop(console tinygo.Console, ln picnet.Listener, loader *module.Loade
 			continue
 		}
 		write(console, "TCP session from "+sess.RemoteAddr()+"\n")
-		runSessionREPL(bufio.NewReader(sess), sess, loader)
+		runSessionREPL(bufio.NewReader(sess), sess, loader, led)
 		if err := sess.Close(); err != nil {
 			write(console, "TCP session close warning: "+err.Error()+"\n")
 		}
@@ -183,7 +189,7 @@ func itoa(v int) string {
 // runSerialREPL runs the interactive REPL over the local USB console.
 // It uses the console's built-in line reader so typed characters echo and
 // backspace/enter behave naturally on the serial terminal.
-func runSerialREPL(console tinygo.Console, loader *module.Loader) {
+func runSerialREPL(console tinygo.Console, loader *module.Loader, led tinygo.LED) {
 	var buf strings.Builder
 	inPaste := false
 
@@ -211,7 +217,7 @@ func runSerialREPL(console tinygo.Console, loader *module.Loader) {
 				src := buf.String()
 				buf.Reset()
 				if src != "" {
-					execSource(console, src, loader)
+					execSource(console, src, loader, led)
 				}
 			}
 			continue
@@ -227,7 +233,7 @@ func runSerialREPL(console tinygo.Console, loader *module.Loader) {
 			continue
 		}
 
-		execSource(console, line, loader)
+		execSource(console, line, loader, led)
 	}
 }
 
@@ -240,7 +246,7 @@ func runSerialREPL(console tinygo.Console, loader *module.Loader) {
 // buffered program as a single unit.  This lets you paste multi-line
 // programs over the USB serial interface without triggering a parse
 // error on every incomplete line.
-func runSessionREPL(r io.Reader, w io.Writer, loader *module.Loader) {
+func runSessionREPL(r io.Reader, w io.Writer, loader *module.Loader, led tinygo.LED) {
 	br, ok := r.(*bufio.Reader)
 	if !ok {
 		br = bufio.NewReader(r)
@@ -274,7 +280,7 @@ func runSessionREPL(r io.Reader, w io.Writer, loader *module.Loader) {
 				src := buf.String()
 				buf.Reset()
 				if src != "" {
-					execSource(w, src, loader)
+					execSource(w, src, loader, led)
 				}
 			}
 			continue
@@ -290,13 +296,13 @@ func runSessionREPL(r io.Reader, w io.Writer, loader *module.Loader) {
 			continue
 		}
 
-		execSource(w, line, loader)
+		execSource(w, line, loader, led)
 	}
 }
 
 // execSource parses, compiles, and runs src, writing results to w.
 // Both Console and Transcript are wired to w so remote sessions see all output.
-func execSource(w io.Writer, src string, loader *module.Loader) {
+func execSource(w io.Writer, src string, loader *module.Loader, led tinygo.LED) {
 	// Parse
 	l := lexer.NewString(src)
 	p := parser.New(l)
@@ -319,6 +325,7 @@ func execSource(w io.Writer, src string, loader *module.Loader) {
 	vm := bytecode.NewVMWithSinks(eval.GlobalSinks{
 		ConsoleWriter:    w,
 		TranscriptWriter: w,
+		LEDDriver:        led,
 	})
 	vm.SetBlocks(c.GetBlocks())
 	vm.AddGlobals(c.GetGlobals())
