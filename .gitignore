@@ -1,6 +1,9 @@
 # Build artifacts
 /picoceci
 *.pcbc
+*.elf
+*.bin
+
 
 # Go
 /vendor/
@@ -11,6 +14,6 @@
 *.swp
 *.swo
 
-# Test helpers — allow integration test fixtures, ignore runtime-generated content
-/testdata/sdcard/runtime/
-testdata/sdcard/.gitkeep
+# Test helpers
+/testdata/sdcard/*
+!/testdata/sdcard/.gitkeep
