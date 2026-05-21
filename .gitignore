@@ -1,6 +1,9 @@
 # Build artifacts
 /picoceci
 *.pcbc
+*.elf
+*.bin
+
 
 # Go
 /vendor/
