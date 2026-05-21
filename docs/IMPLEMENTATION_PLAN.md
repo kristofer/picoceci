@@ -54,6 +54,19 @@ The following milestones have been implemented and verified with `go test ./...`
     writer; serial Console remains available for local recovery; accept loop spawns per-
     session REPL goroutines.
   - Desktop stubs fully tested; integration tests in `pkg/net/net_test.go`.
+- Phase 7 partial (standard library expansion):
+  - `LED` singleton added to globals — `on`, `off`, `toggle`, `blinkEvery:`, `stopBlink`.
+    Platform driver injected via `GlobalSinks.LEDDriver`; no-op stub used on desktop.
+    TinyGo implementation in `pkg/tinygo/led_tinygo.go` drives `machine.LED`.
+  - `Timestamp` class singleton — `Timestamp now` returns a Timestamp instance capturing
+    milliseconds since boot via `freertos.GetTickCount()`. Instances support `-` (yields
+    Duration), `<`, `>`, `=`, `asMilliseconds`, `printString`.
+  - `Duration` class singleton — `Duration ms: n` creates a Duration instance. Instances
+    support `+`, `-`, `<`, `>`, `=`, `asMilliseconds`, `asSeconds`, `printString`.
+  - `TaskSupervisor` singleton — `supervise:name:` restarts a block on error (stops on
+    clean exit); `supervise:name:maxRestarts:` caps restarts. Shares `taskObjectData`
+    with `Task`; both are wired by `eval.SetTaskCaller`.
+  - All new singletons tested in `pkg/eval/builtins_sinks_test.go`.
 
 ## Bridge Runtime Phase 1 Verification Gates (BR1)
 
@@ -620,10 +633,10 @@ Implementation notes:
 - `ReadWriteStream`
 - `TranscriptStream` — serial console with line buffering
 
-### Date / Time
+### Date / Time ✅
 
-- `Timestamp now` — milliseconds since boot (`xTaskGetTickCount`)
-- `Duration` — milliseconds-based duration
+- `Timestamp now` — milliseconds since boot (`xTaskGetTickCount`) — **implemented**
+- `Duration` — milliseconds-based duration — **implemented**
 
 ### Math
 
@@ -632,13 +645,13 @@ Implementation notes:
 
 ### v3 singleton services (required)
 
-- `Wifi` singleton — connect, status, listen, disconnect
-- `SDCard` singleton — mount state + card health + filesystem root helpers
-- `LED` singleton — status and heartbeat control
+- `Wifi` singleton — connect, status, listen, disconnect — **implemented (Phase 6)**
+- `SDCard` singleton — mount state + card health + filesystem root helpers — **implemented (Phase 5)**
+- `LED` singleton — status and heartbeat control — **implemented**
 
 ### Reliability/runtime lifecycle
 
-- Task supervision strategy (`TaskSupervisor`) for crash/restart behavior
+- Task supervision strategy (`TaskSupervisor`) for crash/restart behavior — **implemented**
 - Task naming conventions for diagnostics (all system tasks must have stable names)
 - Boot-phase health checks (`Wifi`, `SDCard`, interpreter) with explicit failure states
 

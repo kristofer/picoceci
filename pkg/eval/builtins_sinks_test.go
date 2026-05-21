@@ -2,6 +2,7 @@ package eval
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -81,6 +82,17 @@ func TestInitialGlobalsWithSinks_TranscriptFallsBackToConsoleSink(t *testing.T) 
 func TestInitialGlobalsWithSinks_HasTaskWifiREPL(t *testing.T) {
 	globals := InitialGlobalsWithSinks(GlobalSinks{})
 	for _, name := range []string{"Task", "Wifi", "PicoceciREPL"} {
+		if globals[name] == nil {
+			t.Errorf("expected %q in globals, got nil", name)
+		}
+	}
+}
+
+// TestInitialGlobalsWithSinks_HasPhase7Globals verifies that LED, Timestamp,
+// Duration, and TaskSupervisor are present in the globals map.
+func TestInitialGlobalsWithSinks_HasPhase7Globals(t *testing.T) {
+	globals := InitialGlobalsWithSinks(GlobalSinks{})
+	for _, name := range []string{"LED", "Timestamp", "Duration", "TaskSupervisor"} {
 		if globals[name] == nil {
 			t.Errorf("expected %q in globals, got nil", name)
 		}
@@ -216,7 +228,7 @@ func TestPicoceciREPL_ServeCallsRunner(t *testing.T) {
 	}
 }
 
-// TestSetTaskCaller verifies that SetTaskCaller wires a caller into the Task global.
+// TestSetTaskCaller_SpawnBlock verifies that SetTaskCaller wires a caller into the Task global.
 func TestSetTaskCaller_SpawnBlock(t *testing.T) {
 	globals := InitialGlobalsWithSinks(GlobalSinks{})
 	task := globals["Task"]
@@ -257,6 +269,15 @@ func TestSetTaskCaller_SpawnBlock(t *testing.T) {
 	}
 }
 
+// stubBlockCaller is a test BlockCaller that delegates to fn.
+type stubBlockCaller struct {
+	fn func(blk *object.Object, args []*object.Object) (*object.Object, error)
+}
+
+func (s *stubBlockCaller) CallBlock(blk *object.Object, args []*object.Object) (*object.Object, error) {
+	return s.fn(blk, args)
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
@@ -288,11 +309,265 @@ func (f *fakeNetSession) ReadLine() (string, error) {
 func (f *fakeNetSession) RemoteAddr() string { return "127.0.0.1:99999" }
 func (f *fakeNetSession) Close() error       { return nil }
 
-// stubBlockCaller is a test BlockCaller that delegates to fn.
-type stubBlockCaller struct {
-	fn func(blk *object.Object, args []*object.Object) (*object.Object, error)
+// ---------------------------------------------------------------------------
+// LED singleton tests
+// ---------------------------------------------------------------------------
+
+// recordingLEDDriver records calls for test assertions.
+type recordingLEDDriver struct {
+	calls []string
 }
 
-func (s *stubBlockCaller) CallBlock(blk *object.Object, args []*object.Object) (*object.Object, error) {
-	return s.fn(blk, args)
+func (r *recordingLEDDriver) On()              { r.calls = append(r.calls, "on") }
+func (r *recordingLEDDriver) Off()             { r.calls = append(r.calls, "off") }
+func (r *recordingLEDDriver) Toggle()          { r.calls = append(r.calls, "toggle") }
+func (r *recordingLEDDriver) BlinkEvery(ms int) {
+	r.calls = append(r.calls, fmt.Sprintf("blink:%d", ms))
+}
+func (r *recordingLEDDriver) StopBlink() { r.calls = append(r.calls, "stopBlink") }
+
+func TestLEDGlobal_Methods(t *testing.T) {
+	rec := &recordingLEDDriver{}
+	globals := InitialGlobalsWithSinks(GlobalSinks{LEDDriver: rec})
+	led := globals["LED"]
+	if led == nil {
+		t.Fatal("LED global not found")
+	}
+
+	callNoArgNative(t, led, "on")
+	callNoArgNative(t, led, "off")
+	callNoArgNative(t, led, "toggle")
+	callOneArgNative(t, led, "blinkEvery:", object.IntObject(500))
+	callNoArgNative(t, led, "stopBlink")
+
+	want := []string{"on", "off", "toggle", "blink:500", "stopBlink"}
+	for i, w := range want {
+		if i >= len(rec.calls) || rec.calls[i] != w {
+			t.Errorf("calls[%d] = %q, want %q (all calls: %v)", i, rec.calls[i], w, rec.calls)
+		}
+	}
+}
+
+func TestLEDGlobal_PrintString(t *testing.T) {
+	globals := InitialGlobalsWithSinks(GlobalSinks{})
+	led := globals["LED"]
+	m := led.Methods["printString"]
+	if m == nil || m.Native == nil {
+		t.Fatal("missing printString method on LED")
+	}
+	res, err := m.Native(led, nil)
+	if err != nil || res == nil || res.SVal != "LED" {
+		t.Errorf("LED printString = %v/%v, want 'LED'/nil", res, err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Timestamp and Duration tests
+// ---------------------------------------------------------------------------
+
+func TestTimestampGlobal_Now(t *testing.T) {
+	globals := InitialGlobalsWithSinks(GlobalSinks{})
+	tsClass := globals["Timestamp"]
+	if tsClass == nil {
+		t.Fatal("Timestamp global not found")
+	}
+
+	nowM := tsClass.Methods["now"]
+	if nowM == nil || nowM.Native == nil {
+		t.Fatal("missing Timestamp now method")
+	}
+	ts, err := nowM.Native(tsClass, nil)
+	if err != nil || ts == nil {
+		t.Fatalf("Timestamp now error: %v / %v", err, ts)
+	}
+	// asMilliseconds should return a non-negative integer
+	msM := ts.Methods["asMilliseconds"]
+	if msM == nil || msM.Native == nil {
+		t.Fatal("missing asMilliseconds on Timestamp instance")
+	}
+	msObj, err := msM.Native(ts, nil)
+	if err != nil || msObj == nil || msObj.IVal < 0 {
+		t.Errorf("Timestamp asMilliseconds = %v/%v, want >= 0", msObj, err)
+	}
+}
+
+func TestTimestampGlobal_Subtraction(t *testing.T) {
+	globals := InitialGlobalsWithSinks(GlobalSinks{})
+	tsClass := globals["Timestamp"]
+	nowM := tsClass.Methods["now"]
+
+	ts1, _ := nowM.Native(tsClass, nil)
+	time.Sleep(5 * time.Millisecond)
+	ts2, _ := nowM.Native(tsClass, nil)
+
+	// ts2 - ts1 should be a Duration >= 0ms
+	subM := ts2.Methods["-"]
+	if subM == nil || subM.Native == nil {
+		t.Fatal("missing - method on Timestamp")
+	}
+	durObj, err := subM.Native(ts2, []*object.Object{ts1})
+	if err != nil || durObj == nil {
+		t.Fatalf("Timestamp - error: %v / %v", err, durObj)
+	}
+	msM := durObj.Methods["asMilliseconds"]
+	if msM == nil || msM.Native == nil {
+		t.Fatal("missing asMilliseconds on Duration")
+	}
+	msObj, _ := msM.Native(durObj, nil)
+	if msObj == nil || msObj.IVal < 0 {
+		t.Errorf("Duration ms = %v, want >= 0", msObj)
+	}
+}
+
+func TestDurationClass_MsConstructor(t *testing.T) {
+	globals := InitialGlobalsWithSinks(GlobalSinks{})
+	durClass := globals["Duration"]
+	if durClass == nil {
+		t.Fatal("Duration global not found")
+	}
+
+	msM := durClass.Methods["ms:"]
+	if msM == nil || msM.Native == nil {
+		t.Fatal("missing Duration ms: method")
+	}
+	dur, err := msM.Native(durClass, []*object.Object{object.IntObject(1500)})
+	if err != nil || dur == nil {
+		t.Fatalf("Duration ms: error: %v / %v", err, dur)
+	}
+
+	// printString should be "1.500s" for 1500ms
+	psM := dur.Methods["printString"]
+	if psM == nil || psM.Native == nil {
+		t.Fatal("missing printString on Duration")
+	}
+	ps, _ := psM.Native(dur, nil)
+	if ps == nil || ps.SVal != "1.500s" {
+		t.Errorf("Duration printString = %q, want '1.500s'", ps.SVal)
+	}
+
+	// asSeconds
+	secM := dur.Methods["asSeconds"]
+	if secM == nil || secM.Native == nil {
+		t.Fatal("missing asSeconds on Duration")
+	}
+	sec, _ := secM.Native(dur, nil)
+	if sec == nil || sec.FVal != 1.5 {
+		t.Errorf("Duration asSeconds = %v, want 1.5", sec)
+	}
+}
+
+func TestDurationArithmetic(t *testing.T) {
+	globals := InitialGlobalsWithSinks(GlobalSinks{})
+	durClass := globals["Duration"]
+	msM := durClass.Methods["ms:"]
+
+	dur100, _ := msM.Native(durClass, []*object.Object{object.IntObject(100)})
+	dur200, _ := msM.Native(durClass, []*object.Object{object.IntObject(200)})
+
+	// 100 + 200 = 300
+	addM := dur100.Methods["+"]
+	sum, err := addM.Native(dur100, []*object.Object{dur200})
+	if err != nil || sum == nil {
+		t.Fatalf("Duration + error: %v", err)
+	}
+	sumMs, _ := sum.Methods["asMilliseconds"].Native(sum, nil)
+	if sumMs.IVal != 300 {
+		t.Errorf("100ms + 200ms = %dms, want 300ms", sumMs.IVal)
+	}
+
+	// 200 < 100 → false; 100 < 200 → true
+	ltM := dur100.Methods["<"]
+	res, _ := ltM.Native(dur100, []*object.Object{dur200})
+	if res == nil || !res.Truthy() {
+		t.Errorf("100ms < 200ms = %v, want true", res)
+	}
+	res2, _ := ltM.Native(dur200, []*object.Object{dur100})
+	if res2 == nil || res2.Truthy() {
+		t.Errorf("200ms < 100ms = %v, want false", res2)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TaskSupervisor tests
+// ---------------------------------------------------------------------------
+
+func TestTaskSupervisor_InGlobals(t *testing.T) {
+	globals := InitialGlobalsWithSinks(GlobalSinks{})
+	ts := globals["TaskSupervisor"]
+	if ts == nil {
+		t.Fatal("TaskSupervisor global not found")
+	}
+	for _, sel := range []string{"supervise:name:", "supervise:name:maxRestarts:", "printString"} {
+		if ts.Methods[sel] == nil {
+			t.Errorf("missing method %q on TaskSupervisor", sel)
+		}
+	}
+}
+
+func TestTaskSupervisor_SuperviseRestartsOnError(t *testing.T) {
+	globals := InitialGlobalsWithSinks(GlobalSinks{})
+	ts := globals["TaskSupervisor"]
+
+	// Before SetTaskCaller, supervise:name: should error.
+	blk := &object.Object{Kind: object.KindBlock}
+	_, err := ts.Methods["supervise:name:"].Native(ts, []*object.Object{blk, object.StringObject("t")})
+	if err == nil {
+		t.Fatal("expected error before SetTaskCaller, got nil")
+	}
+
+	// Wire caller that fails twice then succeeds.
+	var callCount int
+	stub := &stubBlockCaller{fn: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		callCount++
+		if callCount < 3 {
+			return nil, &Error{Kind: "TestError", Message: "simulated crash"}
+		}
+		return object.Nil, nil // clean exit on 3rd call
+	}}
+	SetTaskCaller(globals, stub)
+
+	_, err = ts.Methods["supervise:name:"].Native(ts, []*object.Object{blk, object.StringObject("t")})
+	if err != nil {
+		t.Fatalf("supervise:name: after SetTaskCaller error: %v", err)
+	}
+	// Wait for goroutine to complete (3 calls: fail, fail, succeed).
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) && callCount < 3 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if callCount < 3 {
+		t.Errorf("block called %d times, want at least 3 (2 crashes + 1 clean exit)", callCount)
+	}
+}
+
+func TestTaskSupervisor_MaxRestarts(t *testing.T) {
+	globals := InitialGlobalsWithSinks(GlobalSinks{})
+	ts := globals["TaskSupervisor"]
+
+	var callCount int
+	stub := &stubBlockCaller{fn: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		callCount++
+		return nil, &Error{Kind: "TestError", Message: "always crash"}
+	}}
+	SetTaskCaller(globals, stub)
+
+	blk := &object.Object{Kind: object.KindBlock}
+	// maxRestarts: 2 → initial call + 2 restarts = 3 total calls
+	_, err := ts.Methods["supervise:name:maxRestarts:"].Native(ts, []*object.Object{
+		blk,
+		object.StringObject("t"),
+		object.IntObject(2),
+	})
+	if err != nil {
+		t.Fatalf("supervise:name:maxRestarts: error: %v", err)
+	}
+
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) && callCount < 3 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond) // allow any extra calls
+	if callCount != 3 {
+		t.Errorf("block called %d times, want exactly 3 (initial + 2 restarts)", callCount)
+	}
 }

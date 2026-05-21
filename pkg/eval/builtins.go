@@ -25,6 +25,26 @@ type BlockCaller interface {
 // The function should block until the session ends (client disconnects or EOF).
 type REPLRunner func(r io.Reader, w io.Writer)
 
+// LEDDriver is the platform-provided LED controller.
+// Implement this interface to wire a real LED into the LED singleton.
+// A no-op stub is used when GlobalSinks.LEDDriver is nil.
+type LEDDriver interface {
+	On()
+	Off()
+	Toggle()
+	BlinkEvery(ms int)
+	StopBlink()
+}
+
+// noopLEDDriver is a silent LED stub used on desktop when no driver is injected.
+type noopLEDDriver struct{}
+
+func (noopLEDDriver) On()              {}
+func (noopLEDDriver) Off()             {}
+func (noopLEDDriver) Toggle()          {}
+func (noopLEDDriver) BlinkEvery(_ int) {}
+func (noopLEDDriver) StopBlink()       {}
+
 // GlobalSinks configures output destinations for built-in global objects.
 // Console and Transcript can be routed independently.
 // WifiManager and REPLRunner wire WiFi and remote-REPL support.
@@ -40,11 +60,16 @@ type GlobalSinks struct {
 	// It receives the session's Reader and Writer and should run until the
 	// session ends.  If nil, PicoceciREPL.serve: is a no-op.
 	REPLRunner REPLRunner
+
+	// LEDDriver, when non-nil, backs the LED singleton with real hardware.
+	// If nil, a no-op stub is used.
+	LEDDriver LEDDriver
 }
 
 // InitialGlobals returns a map of global names to their initial values.
 // This includes: nil, true, false (picoceci keywords), Console, Transcript,
-// Array, Queue, Channel, Task, Wifi, PicoceciREPL.
+// Array, Queue, Channel, Task, Wifi, PicoceciREPL, LED, Timestamp, Duration,
+// TaskSupervisor.
 // Both the tree-walking interpreter and bytecode VM use this.
 func InitialGlobals() map[string]*object.Object {
 	return InitialGlobalsWithSinks(GlobalSinks{})
@@ -77,6 +102,7 @@ func InitialGlobalsWithSinks(sinks GlobalSinks) map[string]*object.Object {
 	// The BlockCaller is set lazily via SetTaskCaller after interpreter/VM init.
 	taskData := &taskObjectData{}
 	globals["Task"] = makeTaskObject(taskData)
+	globals["TaskSupervisor"] = makeTaskSupervisorObject(taskData)
 
 	// Wifi singleton — WiFi station management + TCP listener setup.
 	wifiMgr := sinks.WifiManager
@@ -87,6 +113,19 @@ func InitialGlobalsWithSinks(sinks GlobalSinks) map[string]*object.Object {
 
 	// PicoceciREPL singleton — runs a REPL on a network session.
 	globals["PicoceciREPL"] = makePicoceciREPLObject(sinks.REPLRunner)
+
+	// LED singleton — board LED status and heartbeat control.
+	ledDriver := sinks.LEDDriver
+	if ledDriver == nil {
+		ledDriver = noopLEDDriver{}
+	}
+	globals["LED"] = makeLEDObject(ledDriver)
+
+	// Timestamp class — milliseconds since boot.
+	globals["Timestamp"] = makeTimestampClass()
+
+	// Duration class — millisecond-based time spans.
+	globals["Duration"] = makeDurationClass()
 
 	return globals
 }
@@ -619,6 +658,355 @@ func makePicoceciREPLObject(runner REPLRunner) *object.Object {
 
 	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
 		return object.StringObject("PicoceciREPL"), nil
+	}}
+
+	return o
+}
+
+// ---------------------------------------------------------------------------
+// LED global
+// ---------------------------------------------------------------------------
+
+// makeLEDObject creates the LED singleton picoceci object backed by driver.
+func makeLEDObject(driver LEDDriver) *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+		Env:     driver,
+	}
+
+	o.Methods["on"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		self.Env.(LEDDriver).On()
+		return object.Nil, nil
+	}}
+
+	o.Methods["off"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		self.Env.(LEDDriver).Off()
+		return object.Nil, nil
+	}}
+
+	o.Methods["toggle"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		self.Env.(LEDDriver).Toggle()
+		return object.Nil, nil
+	}}
+
+	// LED blinkEvery: ms — start periodic blink at ms interval.
+	o.Methods["blinkEvery:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		if len(args) == 0 || args[0] == nil || args[0].Kind != object.KindSmallInt {
+			return nil, &Error{Kind: "LEDError", Message: "LED blinkEvery: argument must be an Integer (milliseconds)", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		self.Env.(LEDDriver).BlinkEvery(int(args[0].IVal))
+		return object.Nil, nil
+	}}
+
+	o.Methods["stopBlink"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		self.Env.(LEDDriver).StopBlink()
+		return object.Nil, nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("LED"), nil
+	}}
+
+	return o
+}
+
+// ---------------------------------------------------------------------------
+// Timestamp class and instances
+// ---------------------------------------------------------------------------
+
+// timestampData holds milliseconds since boot for a Timestamp instance.
+type timestampData struct{ ms int64 }
+
+// makeTimestampClass creates the Timestamp class singleton.
+// Timestamp now returns a Timestamp instance capturing the current tick count.
+func makeTimestampClass() *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+	}
+
+	o.Methods["now"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return makeTimestampInstance(int64(freertos.GetTickCount())), nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("Timestamp"), nil
+	}}
+
+	return o
+}
+
+// makeTimestampInstance creates a Timestamp picoceci object for ms.
+func makeTimestampInstance(ms int64) *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+		Env:     &timestampData{ms: ms},
+	}
+
+	o.Methods["asMilliseconds"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.IntObject(self.Env.(*timestampData).ms), nil
+	}}
+
+	// ts1 - ts2 → Duration
+	o.Methods["-"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		td := self.Env.(*timestampData)
+		if len(args) == 0 || args[0] == nil {
+			return nil, &Error{Kind: "TypeError", Message: "Timestamp - requires a Timestamp argument", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		other, ok := args[0].Env.(*timestampData)
+		if !ok {
+			return nil, &Error{Kind: "TypeError", Message: "Timestamp - argument must be a Timestamp", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		return makeDurationInstance(td.ms - other.ms), nil
+	}}
+
+	o.Methods["<"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		td := self.Env.(*timestampData)
+		if len(args) > 0 && args[0] != nil {
+			if other, ok := args[0].Env.(*timestampData); ok {
+				return object.BoolObject(td.ms < other.ms), nil
+			}
+		}
+		return object.False, nil
+	}}
+
+	o.Methods[">"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		td := self.Env.(*timestampData)
+		if len(args) > 0 && args[0] != nil {
+			if other, ok := args[0].Env.(*timestampData); ok {
+				return object.BoolObject(td.ms > other.ms), nil
+			}
+		}
+		return object.False, nil
+	}}
+
+	o.Methods["="] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		td := self.Env.(*timestampData)
+		if len(args) > 0 && args[0] != nil {
+			if other, ok := args[0].Env.(*timestampData); ok {
+				return object.BoolObject(td.ms == other.ms), nil
+			}
+		}
+		return object.False, nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		td := self.Env.(*timestampData)
+		return object.StringObject(fmt.Sprintf("Timestamp(%dms)", td.ms)), nil
+	}}
+
+	return o
+}
+
+// ---------------------------------------------------------------------------
+// Duration class and instances
+// ---------------------------------------------------------------------------
+
+// durationData holds milliseconds for a Duration instance.
+type durationData struct{ ms int64 }
+
+// makeDurationClass creates the Duration class singleton.
+// Duration ms: n creates a Duration instance for n milliseconds.
+func makeDurationClass() *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+	}
+
+	o.Methods["ms:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
+		if len(args) == 0 || args[0] == nil || args[0].Kind != object.KindSmallInt {
+			return nil, &Error{Kind: "TypeError", Message: "Duration ms: requires an Integer argument", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		return makeDurationInstance(args[0].IVal), nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("Duration"), nil
+	}}
+
+	return o
+}
+
+// makeDurationInstance creates a Duration picoceci object for ms milliseconds.
+func makeDurationInstance(ms int64) *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+		Env:     &durationData{ms: ms},
+	}
+
+	o.Methods["asMilliseconds"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.IntObject(self.Env.(*durationData).ms), nil
+	}}
+
+	o.Methods["asSeconds"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		dd := self.Env.(*durationData)
+		return object.FloatObject(float64(dd.ms) / 1000.0), nil
+	}}
+
+	o.Methods["+"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		dd := self.Env.(*durationData)
+		if len(args) == 0 || args[0] == nil {
+			return nil, &Error{Kind: "TypeError", Message: "Duration + requires a Duration argument", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		other, ok := args[0].Env.(*durationData)
+		if !ok {
+			return nil, &Error{Kind: "TypeError", Message: "Duration + argument must be a Duration", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		return makeDurationInstance(dd.ms + other.ms), nil
+	}}
+
+	o.Methods["-"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		dd := self.Env.(*durationData)
+		if len(args) == 0 || args[0] == nil {
+			return nil, &Error{Kind: "TypeError", Message: "Duration - requires a Duration argument", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		other, ok := args[0].Env.(*durationData)
+		if !ok {
+			return nil, &Error{Kind: "TypeError", Message: "Duration - argument must be a Duration", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		return makeDurationInstance(dd.ms - other.ms), nil
+	}}
+
+	o.Methods["<"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		dd := self.Env.(*durationData)
+		if len(args) > 0 && args[0] != nil {
+			if other, ok := args[0].Env.(*durationData); ok {
+				return object.BoolObject(dd.ms < other.ms), nil
+			}
+		}
+		return object.False, nil
+	}}
+
+	o.Methods[">"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		dd := self.Env.(*durationData)
+		if len(args) > 0 && args[0] != nil {
+			if other, ok := args[0].Env.(*durationData); ok {
+				return object.BoolObject(dd.ms > other.ms), nil
+			}
+		}
+		return object.False, nil
+	}}
+
+	o.Methods["="] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		dd := self.Env.(*durationData)
+		if len(args) > 0 && args[0] != nil {
+			if other, ok := args[0].Env.(*durationData); ok {
+				return object.BoolObject(dd.ms == other.ms), nil
+			}
+		}
+		return object.False, nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		dd := self.Env.(*durationData)
+		if dd.ms < 0 {
+			return object.StringObject(fmt.Sprintf("-%dms", -dd.ms)), nil
+		}
+		if dd.ms >= 1000 {
+			return object.StringObject(fmt.Sprintf("%.3fs", float64(dd.ms)/1000.0)), nil
+		}
+		return object.StringObject(fmt.Sprintf("%dms", dd.ms)), nil
+	}}
+
+	return o
+}
+
+// ---------------------------------------------------------------------------
+// TaskSupervisor global
+// ---------------------------------------------------------------------------
+
+// makeTaskSupervisorObject creates the TaskSupervisor singleton.
+// It shares taskObjectData with Task; SetTaskCaller wires both simultaneously.
+func makeTaskSupervisorObject(data *taskObjectData) *object.Object {
+	o := &object.Object{
+		Kind:    object.KindObject,
+		Slots:   make(map[string]*object.Object),
+		Methods: make(map[string]*object.MethodDef),
+		Env:     data,
+	}
+
+	// TaskSupervisor supervise: aBlock name: aString
+	// Spawns aBlock in a goroutine, restarting on error indefinitely.
+	// A clean (nil error) return stops supervision.
+	o.Methods["supervise:name:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		td, ok := self.Env.(*taskObjectData)
+		if !ok || td == nil || td.caller == nil {
+			return nil, &Error{Kind: "TaskError", Message: "TaskSupervisor not initialized; call SetTaskCaller after creating interpreter", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		if len(args) < 2 {
+			return object.Nil, nil
+		}
+		blk := args[0]
+		if blk == nil || blk.Kind != object.KindBlock {
+			return nil, &Error{Kind: "TaskError", Message: "TaskSupervisor supervise:name: first argument must be a Block", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		name := ""
+		if args[1] != nil {
+			name = args[1].SVal
+		}
+		caller := td.caller
+		go func() {
+			for {
+				_, err := caller.CallBlock(blk, nil)
+				if err == nil {
+					return // clean exit — stop supervision
+				}
+				// error — restart
+			}
+		}()
+		return object.SymbolObject(name), nil
+	}}
+
+	// TaskSupervisor supervise: aBlock name: aString maxRestarts: n
+	// Spawns aBlock in a goroutine, restarting on error up to n times.
+	// A clean (nil error) return stops supervision immediately.
+	o.Methods["supervise:name:maxRestarts:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		td, ok := self.Env.(*taskObjectData)
+		if !ok || td == nil || td.caller == nil {
+			return nil, &Error{Kind: "TaskError", Message: "TaskSupervisor not initialized; call SetTaskCaller after creating interpreter", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		if len(args) < 3 {
+			return object.Nil, nil
+		}
+		blk := args[0]
+		if blk == nil || blk.Kind != object.KindBlock {
+			return nil, &Error{Kind: "TaskError", Message: "TaskSupervisor supervise:name:maxRestarts: first argument must be a Block", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		name := ""
+		if args[1] != nil {
+			name = args[1].SVal
+		}
+		var maxRestarts int64
+		if args[2] != nil && args[2].Kind == object.KindSmallInt {
+			maxRestarts = args[2].IVal
+		}
+		caller := td.caller
+		go func() {
+			var restarts int64
+			for {
+				_, err := caller.CallBlock(blk, nil)
+				if err == nil {
+					return // clean exit — stop supervision
+				}
+				restarts++
+				if restarts > maxRestarts {
+					return
+				}
+			}
+		}()
+		return object.SymbolObject(name), nil
+	}}
+
+	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
+		return object.StringObject("TaskSupervisor"), nil
 	}}
 
 	return o
