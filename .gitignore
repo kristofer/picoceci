@@ -17,3 +17,9 @@
 # Test helpers
 /testdata/sdcard/*
 !/testdata/sdcard/.gitkeep
+
+# Ignore Graphify output and local caches
+graphify-out/manifest.json 
+graphify-out/cost.json 
+graphify-out/cache/
+
