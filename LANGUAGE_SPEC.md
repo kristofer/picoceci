@@ -623,29 +623,37 @@ picoceci exposes FreeRTOS primitives through a set of built-in objects.
 ### 10.1 Tasks
 
 ```picoceci
-| task: Any |
-task := Task spawn: [
+"Basic task spawning - returns a Symbol with the task name"
+Task spawn: [
     [ true ] whileTrue: [
-        Console println: 'tick'.
-        Task delay: 1000   "milliseconds"
+        Console println: 'tick'
     ]
-].
-task priority: 2.
-task name: 'blinker'.
+] name: 'ticker'.
+
+"TaskSupervisor for automatic restart on error"
+TaskSupervisor supervise: [
+    [ true ] whileTrue: [
+        Console println: 'supervised tick'
+    ]
+] name: 'supervised-ticker'.
+
+"TaskSupervisor with limited restarts"
+TaskSupervisor supervise: [
+    Console println: 'run once'
+] name: 'limited' maxRestarts: 3.
 ```
 
-`Task spawn: aBlock` creates and starts a FreeRTOS task running the block.
+`Task spawn:name:` spawns a picoceci block in a goroutine and returns a Symbol with the task name.
+`TaskSupervisor supervise:name:` spawns a block that automatically restarts on error (stops on clean exit).
+`TaskSupervisor supervise:name:maxRestarts:` same as above but limits the number of restarts.
 
-| Message | FreeRTOS equivalent |
-|---|---|
-| `Task spawn: aBlock` | `xTaskCreate` |
-| `Task spawn: aBlock stackSize: n` | `xTaskCreate` with stack size |
-| `task suspend` | `vTaskSuspend` |
-| `task resume` | `vTaskResume` |
-| `task delete` | `vTaskDelete` |
-| `Task delay: ms` | `vTaskDelay` |
-| `Task yield` | `taskYIELD` |
-| `Task currentPriority` | `uxTaskPriorityGet` |
+| Message | Description |
+| --- | --- |
+| `Task spawn:name:` | Spawn block in goroutine, return Symbol with name |
+| `TaskSupervisor supervise:name:` | Spawn with unlimited restarts on error |
+| `TaskSupervisor supervise:name:maxRestarts:` | Spawn with limited restarts |
+
+**Note:** The full FreeRTOS task API (suspend, resume, delete, delay, yield, priority) is documented in `docs/freertos-bridge.md` but not yet implemented in the picoceci runtime. Only the goroutine-based spawn API is currently available.
 
 ### 10.2 Queues
 
@@ -659,7 +667,7 @@ q := Queue new: 10.
 Task spawn: [
     q send: 42.
     q send: 99
-].
+] name: 'producer'.
 
 "Consumer"
 Task spawn: [
@@ -668,7 +676,7 @@ Task spawn: [
         item := q receive.
         Console println: item printString
     ]
-].
+] name: 'consumer'.
 ```
 
 Sending a value whose type does not match raises a `TypeError` at the point of send.  An unparameterised `Queue<<Any>>` accepts any value (equivalent to v1 behaviour).

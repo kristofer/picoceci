@@ -7,6 +7,48 @@ Built-in modules are compiled into the runtime binary and do not require SD card
 
 ---
 
+## REPL Meta Commands
+
+The picoceci REPL (Read-Eval-Print Loop) provides meta commands that are handled by the outer loop of the interpreter rather than being evaluated as picoceci code. Meta commands start with a dot (`.`).
+
+Available meta commands:
+
+| Command | Description |
+| --- | --- |
+| `.globals` | List all global variable names and count |
+| `.help` | Show available meta commands |
+| `.version` | Show picoceci version string |
+
+**Example:**
+
+```text
+picoceci> .globals
+globals (19):
+  Array
+  Channel
+  Console
+  Duration
+  LED
+  PicoceciREPL
+  Queue
+  Task
+  TaskSupervisor
+  Timestamp
+  Transcript
+  Wifi
+  false
+  nil
+  true
+picoceci> .version
+picoceci 0.4.5-dev
+picoceci> .help
+meta-commands: .globals  .help  .version
+```
+
+These meta commands are available on all three platforms: desktop AST interpreter, desktop bytecode VM, and ESP32-S3 VM.
+
+---
+
 ## Module: `core` (auto-imported)
 
 The `core` module is always available.
@@ -376,31 +418,61 @@ Unordered collection of unique values.
 
 ## Module: `task`
 
-See `LANGUAGE_SPEC.md` §10 and `docs/freertos-bridge.md` for full API.
+`Task` is a singleton that spawns picoceci blocks in goroutines (or FreeRTOS tasks on embedded platforms).
 
-Summary:
+**Currently implemented:**
 
-- `Task` — FreeRTOS task wrapper
-- `Queue` — FreeRTOS queue
-- `Semaphore` — FreeRTOS binary / counting / mutex semaphore
-- `Timer` — FreeRTOS software timer
-- `Channel` — higher-level typed channel (built on Queue)
-- `TaskSupervisor` — crash/restart supervisor for picoceci blocks
+| Message | Description |
+| --- | --- |
+| `Task spawn: aBlock name: aString` | Spawn block in goroutine; returns Symbol with name |
+
+**Example:**
+
+```picoceci
+Task spawn: [
+    Console println: 'Hello from task'
+] name: 'greeter'.
+```
+
+**Not yet implemented** (documented in `docs/freertos-bridge.md` but not in runtime):
+
+- `Task delay: ms` — delay for milliseconds
+- `Task yield` — yield to scheduler
+- `task suspend` / `task resume` / `task delete` — task handle methods
+- `task priority:` / `Task currentPriority` — priority management
+
+See `LANGUAGE_SPEC.md` §10 and `docs/freertos-bridge.md` for planned API.
 
 ---
 
 ## Module: `tasksupervisor`
 
 `TaskSupervisor` is a singleton that runs picoceci blocks in goroutines and
-automatically restarts them if they terminate with an error.
+automatically restarts them if they terminate with an error. A clean exit (nil error) stops supervision.
 
 | Message | Description |
-|---|---|
-| `TaskSupervisor supervise: aBlock name: aString` | Run block; restart on error (stop on clean exit) |
+| --- | --- |
+| `TaskSupervisor supervise: aBlock name: aString` | Run block; restart on error indefinitely (stop on clean exit) |
 | `TaskSupervisor supervise: aBlock name: aString maxRestarts: n` | Restart on error up to n times; stop on clean exit |
 
+**Example:**
+
+```picoceci
+"Supervised task that restarts on error"
+TaskSupervisor supervise: [
+    [ true ] whileTrue: [
+        Console println: 'tick'
+    ]
+] name: 'ticker'.
+
+"Limited restarts"
+TaskSupervisor supervise: [
+    Console println: 'run once'
+] name: 'limited' maxRestarts: 3.
+```
+
 `TaskSupervisor` shares the `SetTaskCaller` wiring with `Task` — both become
-available after the interpreter or VM is initialised.
+available after the interpreter or VM is initialized.
 
 ---
 
