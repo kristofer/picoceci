@@ -29,9 +29,8 @@ import (
 	"github.com/kristofer/picoceci/pkg/parser"
 	"github.com/kristofer/picoceci/pkg/sdcard"
 	"github.com/kristofer/picoceci/pkg/tinygo"
+	"github.com/kristofer/picoceci/pkg/version"
 )
-
-const version = "0.3.0-dev"
 
 // wifiSSID and wifiPass are build-time WiFi credentials.
 // Override at build time with:
@@ -67,7 +66,7 @@ func main() {
 	} else {
 		write(console, "boot: usb wait timeout, continuing\n")
 	}
-	write(console, "picoceci "+version+" (ESP32-S3)\n")
+	write(console, "picoceci "+version.Version+" (ESP32-S3)\n")
 
 	// Try to mount SD card (will fail without hardware driver)
 	if err := sdcard.Mount("/sdcard/"); err != nil {
@@ -412,7 +411,7 @@ func handleMetaCommand(w io.Writer, line string, state *vmState) bool {
 		writeStr(w, "meta-commands: .globals  .help  .version\n")
 		return true
 	case ".version":
-		writeStr(w, "picoceci "+version+"\n")
+		writeStr(w, "picoceci "+version.Version+"\n")
 		return true
 	}
 	return false

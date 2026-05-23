@@ -346,6 +346,18 @@ func (interp *Interpreter) Eval(nodes []ast.Node) (*object.Object, error) {
 	return result, nil
 }
 
+// ListGlobals returns a sorted list of all global variable names.
+func (interp *Interpreter) ListGlobals() []string {
+	if interp.globals == nil || interp.globals.vars == nil {
+		return []string{}
+	}
+	names := make([]string, 0, len(interp.globals.vars))
+	for name := range interp.globals.vars {
+		names = append(names, name)
+	}
+	return names
+}
+
 // evalNode dispatches on node type.
 func (interp *Interpreter) evalNode(n ast.Node, env *Env) (*object.Object, error) {
 	switch node := n.(type) {

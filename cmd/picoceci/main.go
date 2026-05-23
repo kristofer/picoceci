@@ -23,9 +23,8 @@ import (
 	"github.com/kristofer/picoceci/pkg/object"
 	"github.com/kristofer/picoceci/pkg/parser"
 	"github.com/kristofer/picoceci/pkg/sdcard"
+	"github.com/kristofer/picoceci/pkg/version"
 )
-
-const version = "0.2.0-dev"
 
 func main() {
 	// Initialize SD card stub for desktop (maps /sdcard/ to ./testdata/sdcard/)
@@ -53,7 +52,7 @@ func main() {
 	case "repl-vm":
 		runREPLVM()
 	case "version":
-		fmt.Printf("picoceci %s\n", version)
+		fmt.Printf("picoceci %s\n", version.Version)
 	default:
 		printUsage()
 		os.Exit(1)
@@ -89,7 +88,7 @@ Usage:
   picoceci repl             start an interactive REPL
 	picoceci repl-vm          start an interactive REPL via bytecode VM
   picoceci version          print version information
-`, version)
+`, version.Version)
 }
 
 // runFile reads, parses, and evaluates a .pc source file.
@@ -158,14 +157,14 @@ func createModuleLoader() *module.Loader {
 // buffered program as a single unit.  This lets you paste multi-line
 // programs without triggering a parse error on every incomplete line.
 func runREPL() {
-	fmt.Printf("picoceci %s  (type Ctrl-D to exit)\n", version)
+	fmt.Printf("picoceci %s  (type Ctrl-D to exit)\n", version.Version)
 	fmt.Println("  tip: type '---' to enter/exit paste mode for multi-line programs")
 	runREPLWithIO(os.Stdin, os.Stdout, os.Stderr)
 }
 
 // runREPLVM starts a bytecode-VM-backed interactive REPL.
 func runREPLVM() {
-	fmt.Printf("picoceci %s (bytecode VM)  (type Ctrl-D to exit)\n", version)
+	fmt.Printf("picoceci %s (bytecode VM)  (type Ctrl-D to exit)\n", version.Version)
 	fmt.Println("  tip: type '---' to enter/exit paste mode for multi-line programs")
 	runREPLWithVMIO(os.Stdin, os.Stdout, os.Stderr)
 }
@@ -220,6 +219,11 @@ func runREPLWithIO(r io.Reader, out, errOut io.Writer) {
 			continue
 		}
 
+		// Handle meta-commands (.globals, .help, .version)
+		if handleMetaCommand(line, interp, out) {
+			continue
+		}
+
 		evalSourceWithIO(interp, line, out, errOut)
 	}
 	fmt.Fprintln(out)
@@ -228,7 +232,12 @@ func runREPLWithIO(r io.Reader, out, errOut io.Writer) {
 // runREPLWithVMIO is the bytecode-VM counterpart of runREPLWithIO.
 func runREPLWithVMIO(r io.Reader, out, errOut io.Writer) {
 	loader := createModuleLoader()
-	globals := make(map[string]*object.Object)
+	// Initialize globals with built-in objects (Console, Task, etc.)
+	// similar to how ESP32 version does it
+	globals := eval.InitialGlobalsWithSinks(eval.GlobalSinks{
+		ConsoleWriter:    out,
+		TranscriptWriter: out,
+	})
 	blocks := make([]*bytecode.CompiledBlock, 0)
 
 	scanner := bufio.NewScanner(r)
@@ -271,6 +280,11 @@ func runREPLWithVMIO(r io.Reader, out, errOut io.Writer) {
 		}
 
 		if line == "" {
+			continue
+		}
+
+		// Handle meta-commands (.globals, .help, .version)
+		if handleMetaCommandVM(line, globals, out) {
 			continue
 		}
 
@@ -357,4 +371,54 @@ func parseSource(src []byte) (*ast.Program, error) {
 	l := lexer.New(src)
 	p := parser.New(l)
 	return p.ParseProgram()
+}
+
+// handleMetaCommand processes REPL meta-commands that begin with ".".
+// Returns true if the line was a meta-command and has been handled.
+//
+//	.globals   – list all global names currently in the interpreter
+//	.help      – show available meta-commands
+//	.version   – show picoceci version
+func handleMetaCommand(line string, interp *eval.Interpreter, out io.Writer) bool {
+	switch line {
+	case ".globals":
+		// Access the interpreter's globals environment to list all variables
+		globals := interp.ListGlobals()
+		fmt.Fprintf(out, "globals (%d):\n", len(globals))
+		for _, name := range globals {
+			fmt.Fprintf(out, "  %s\n", name)
+		}
+		return true
+	case ".help":
+		fmt.Fprintln(out, "meta-commands: .globals  .help  .version")
+		return true
+	case ".version":
+		fmt.Fprintf(out, "picoceci %s\n", version.Version)
+		return true
+	}
+	return false
+}
+
+// handleMetaCommandVM processes REPL meta-commands for the bytecode VM REPL.
+// Returns true if the line was a meta-command and has been handled.
+//
+//	.globals   – list all global names currently in the VM state
+//	.help      – show available meta-commands
+//	.version   – show picoceci version
+func handleMetaCommandVM(line string, globals map[string]*object.Object, out io.Writer) bool {
+	switch line {
+	case ".globals":
+		fmt.Fprintf(out, "globals (%d):\n", len(globals))
+		for name := range globals {
+			fmt.Fprintf(out, "  %s\n", name)
+		}
+		return true
+	case ".help":
+		fmt.Fprintln(out, "meta-commands: .globals  .help  .version")
+		return true
+	case ".version":
+		fmt.Fprintf(out, "picoceci %s\n", version.Version)
+		return true
+	}
+	return false
 }

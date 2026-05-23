@@ -1,0 +1,7 @@
+// {
+//   "env": {
+//     "ANTHROPIC_BASE_URL": "http://192.168.1.135:11434",
+//     "ANTHROPIC_API_KEY": "",
+//     "ANTHROPIC_MODEL": "qwen2.5-coder:7b"
+//   }
+// }

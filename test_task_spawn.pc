@@ -1,0 +1,6 @@
+| task: Any |
+task := Task spawn: [
+    Console println: 'Hello from task!'.
+].
+Task delay: 100.
+Console println: 'Done'.

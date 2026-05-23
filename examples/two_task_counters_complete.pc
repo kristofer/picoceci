@@ -1,0 +1,62 @@
+"Two tasks, each with its own Counter, counting from 1 to 10"
+"Complete version with Counter object declaration included"
+
+"FIRST: Declare the Counter object"
+object Counter {
+    | count: Int |
+
+    init [
+        count := 0
+    ]
+
+    inc [
+        count := count + 1.
+        ^ self
+    ]
+
+    value [
+        ^ count
+    ]
+
+    reset [
+        count := 0.
+        ^ self
+    ]
+}
+
+"THEN: Use it to create instances"
+| counter1: Counter counter2: Counter task1: Any task2: Any |
+
+"Create two separate Counter instances"
+counter1 := Counter new.
+counter2 := Counter new.
+
+"Task 1: Count from 1 to 10 with counter1"
+task1 := Task spawn: [
+    [ counter1 value < 10 ] whileTrue: [
+        counter1 inc.
+        Console println: 'Task 1 - Counter: ', counter1 value printString.
+        Task delay: 500
+    ]
+].
+task1 name: 'counter-task-1'.
+task1 priority: 2.
+
+"Task 2: Count from 1 to 10 with counter2"
+task2 := Task spawn: [
+    [ counter2 value < 10 ] whileTrue: [
+        counter2 inc.
+        Console println: 'Task 2 - Counter: ', counter2 value printString.
+        Task delay: 700
+    ]
+].
+task2 name: 'counter-task-2'.
+task2 priority: 2.
+
+Console println: 'Both tasks started!'.
+
+"Give tasks time to complete"
+Task delay: 8000.
+
+Console println: 'Final counter1 value: ', counter1 value printString.
+Console println: 'Final counter2 value: ', counter2 value printString.

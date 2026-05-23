@@ -1,0 +1,12 @@
+object Counter {
+    | count: Int |
+    init [ count := 0 ]
+}
+
+| c: Counter instance: Counter |
+c := Counter new.
+
+Console println: 'Factory created instance successfully'.
+
+"Now try to call new on the instance (not the factory)"
+instance := c new.
