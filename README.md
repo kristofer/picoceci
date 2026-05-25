@@ -59,6 +59,7 @@ picoceci/
 ├── docs/
 │   ├── grammar.ebnf            ← formal EBNF grammar (v2)
 │   ├── TYPED_VARIABLES_PLAN.md ← v2 typed-variable design and implementation plan
+│   ├── V3_VARIABLE_DECLARATIONS_PLAN.md ← v3 declaration-syntax recommendation and phased migration plan
 │   ├── stdlib.md               ← standard library reference
 │   ├── freertos-bridge.md      ← FreeRTOS / TinyGo runtime bridge
 │   └── sdcard.md               ← SD-card / filesystem API
@@ -70,6 +71,8 @@ picoceci/
 🚧 **Specification phase** — the documents above define everything an agent (or human) needs to implement the interpreter and runtime.
 
 **v2** — typed variable declarations are now required.  Every variable must carry an explicit type annotation (`| x: Int |`); bare `| x |` is a parse error.  Use `| x: Any |` to opt into dynamic typing.  See [`docs/TYPED_VARIABLES_PLAN.md`](docs/TYPED_VARIABLES_PLAN.md) for the full design rationale and implementation plan.
+
+**v3 proposal** — variable declaration ergonomics are being evaluated for a `let`-style syntax.  See [`docs/V3_VARIABLE_DECLARATIONS_PLAN.md`](docs/V3_VARIABLE_DECLARATIONS_PLAN.md) for recommendation details, parser/runtime trade-offs, and a phased migration plan.
 
 ## Current progress snapshot
 
