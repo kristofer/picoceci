@@ -11,7 +11,7 @@ Author: picoceci contributors
 picoceci v2 uses typed declarations inside pipe delimiters:
 
 ```picoceci
-| x: Int  obiwan: Object |
+| x: Int obiwan: Object |
 x := 1.
 ```
 
@@ -144,6 +144,6 @@ Acceptance:
 
 ## 5. Open decisions before implementation
 
-1. Should inferred `let x := expr` infer user-defined object/interface names, or collapse to `Any`/`Object`?
+1. Should inferred `let x := expr` infer user-defined object/interface names, or collapse to a broad type (`Any` or a dedicated root object type)?
 2. Should shadowing with `let` be allowed by default in inner scopes, or require an explicit keyword later?
 3. Should a temporary parser warning be added when v2 `| ... |` syntax is used during the compatibility window?
