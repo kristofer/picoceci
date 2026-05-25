@@ -11,7 +11,7 @@ Author: picoceci contributors
 picoceci v2 uses typed declarations inside pipe delimiters:
 
 ```picoceci
-| x: Int obiwan: Object |
+| x: Int obj: Object |
 x := 1.
 ```
 
@@ -27,7 +27,7 @@ Introduce statement-style declarations:
 
 ```picoceci
 let x: Int.
-let obiwan: Object.
+let obj: Object.
 ```
 
 Also support an explicit declaration-with-inference form:
