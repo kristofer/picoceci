@@ -875,7 +875,7 @@ func (c *Compiler) compileObjectDecl(decl *ast.ObjectDecl) error {
 
 	for _, mdef := range decl.Methods {
 		mdef := mdef
-		compiled, err := c.CompileMethod(mdef, allSlots, allSlotTypes)
+		compiled, err := c.CompileMethod(mdef, allSlots)
 		if err != nil {
 			return fmt.Errorf("compile method %s>>%s: %w", decl.Name, mdef.Selector, err)
 		}
@@ -1028,8 +1028,7 @@ func inferDeclaredType(val *object.Object) string {
 }
 
 // CompileMethod compiles a method definition.
-func (c *Compiler) CompileMethod(method *ast.MethodDef, slotNames []string, slotTypes map[string]string) (*CompiledBlock, error) {
-	_ = slotTypes
+func (c *Compiler) CompileMethod(method *ast.MethodDef, slotNames []string) (*CompiledBlock, error) {
 	methodCompiler := &Compiler{
 		chunk:           NewChunk(),
 		scope:           newScope(nil),

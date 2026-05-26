@@ -268,7 +268,7 @@ func (p *Parser) parseLetDecl() *ast.LetDecl {
 		n.Name = strings.TrimSuffix(p.cur.Literal, ":")
 		p.advance()
 		typeName, ok := p.parseTypeName()
-		if !ok && typeName == "" {
+		if !ok {
 			p.errorf("expected type name after %q:, got %q", n.Name, p.cur.Literal)
 			typeName = "Any"
 		}
