@@ -267,7 +267,10 @@ Like Array but holds only bytes (0–255).
 Every variable declaration uses `let`. Use `let x: Type.` for explicit declarations or `let x := expr.` for inference. For fully dynamic behaviour, declare `let x: Any.`.
 
 ```picoceci
-let x: Int. let y: Float. let running: Bool. let name: String.
+let x: Int.
+let y: Float.
+let running: Bool.
+let name: String.
 ```
 
 When a typed variable is declared but not yet assigned, it is automatically initialised to its type's *zero value*:
@@ -333,7 +336,8 @@ stream nextPutAll: 'hello'; nl.
 ### 4.4 Assignment
 
 ```picoceci
-let x: Int. let y: Int.
+let x: Int.
+let y: Int.
 x := 42.
 y := x + 1.
 ```
@@ -738,7 +742,9 @@ v := <-ch.            "receive"
 Multiple typed channels can be declared together:
 
 ```picoceci
-let tempChan: Channel<<Float>>. let alertChan: Channel<<String>>. let cmdQueue: Queue<<Symbol>>.
+let tempChan: Channel<<Float>>.
+let alertChan: Channel<<String>>.
+let cmdQueue: Queue<<Symbol>>.
 ```
 
 Sending a value of the wrong type raises a `TypeError` at the point of send, before it reaches any consumer task.  Use `Channel<<Any>>` to allow mixed-type payloads.

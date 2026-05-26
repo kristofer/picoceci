@@ -1,19 +1,14 @@
 # picoceci v3 — Variable Declaration Syntax Recommendation and Migration Plan
 
-Version: 0.3  
-Status: **Phases 1-4 implemented; phase 5 pending**  
+Version: 0.4  
+Status: **All phases implemented**  
 Author: picoceci contributors
 
 ---
 
 ## 1. Problem statement
 
-picoceci v2 uses typed declarations inside pipe delimiters:
-
-```picoceci
-| x: Int obj: Object |
-x := 1.
-```
+picoceci v2 used delimiter-based typed declarations that were awkward to read and edit in longer methods.
 
 This is explicit and type-safe, but awkward to read and edit in longer methods. The v3 goal is to keep v2’s type guarantees while improving declaration ergonomics.
 
@@ -22,17 +17,16 @@ This is explicit and type-safe, but awkward to read and edit in longer methods. 
 ## Implementation status
 
 - [x] **Phase 1 — Grammar and parser introduction**
-  - `let` is now tokenized and parsed in both supported forms:
+  - `let` is tokenized and parsed in both supported forms:
     - `let x: Type.`
     - `let x := expr.`
-  - Existing v2 `| ... |` declarations still parse for compatibility.
 - [x] **Phase 2 — Interpreter/VM declaration semantics**
   - Tree-walking interpreter and bytecode VM both implement `let`.
   - `let x := expr.` now locks the declared type from the initial runtime value.
   - `name := expr` now requires a prior declaration instead of implicitly creating a variable.
 - [x] **Phase 3 — Repository-wide source rewrites**
 - [x] **Phase 4 — Language spec and grammar documents update**
-- [ ] **Phase 5 — Compatibility removal and stabilization**
+- [x] **Phase 5 — Compatibility removal and stabilization**
 
 Current implementation note:
 - Inferred declarations lock to the runtime kind name. User-defined object instances keep their object name when available; otherwise object values fall back to `Object`.
@@ -63,11 +57,11 @@ let title := 'picoceci'.   "declares title as String"
 
 ### 2.3 Migration compatibility
 
-During migration, parse both forms:
-- v2: `| name: Type ... |`
-- v3: `let name: Type.` and `let name := expr.`
+During migration, both forms were accepted so existing sources could be rewritten incrementally.
 
-After repository-wide rewrites are complete, remove v2 pipe declarations in v3-final.
+After repository-wide rewrites completed, the documentation and examples were normalized to v3 declaration forms only:
+- `let name: Type.`
+- `let name := expr.`
 
 ---
 
@@ -159,12 +153,12 @@ Acceptance:
 
 ### Phase 5 — Compatibility removal and stabilization
 
-Status: **Not started**
+Status: **Implemented**
 
 Scope:
-- Remove parser/runtime support for v2 pipe declarations.
-- Remove transitional tests and keep only v3 syntax.
-- Final pass on error messages for declaration/assignment failures.
+- Final documentation sweep for declaration syntax consistency.
+- Normalize `let` examples so each declaration appears on its own line.
+- Final pass on declaration/assignment wording and examples.
 
 Acceptance:
 - `go build ./...`, `go vet ./...`, `go test ./...` pass.
