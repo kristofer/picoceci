@@ -152,8 +152,9 @@ nil
 
 ```
 .   statement terminator (optional before ']' or at EOF)
-|   variable declaration delimiter
+:   type separator in typed declarations and keyword-part marker
 :=  assignment
+let declaration keyword
 ^   return
 ;   cascade
 ( ) block of sub-expressions (parentheses)
@@ -167,7 +168,7 @@ nil
 
 ## 3. Types and Values
 
-picoceci v2 is **statically typed by declaration**: every variable must carry an explicit type annotation.  The runtime tags every value with its kind and enforces the declared type at the point of assignment.  Use `Any` to opt into dynamic typing where genuinely needed.
+picoceci v3 is **statically typed by declaration**: every variable must be declared with `let` before assignment. Typed declarations (`let x: Type.`) remain explicit, while inferred declarations (`let x := expr.`) lock type from the initial value. The runtime tags every value with its kind and enforces the declared type at assignment.
 
 The following primitive value types exist:
 
@@ -263,10 +264,10 @@ Like Array but holds only bytes (0–255).
 
 ### 3.7 Typed declarations and zero values
 
-Every variable declaration **must** include a type annotation.  The bare `| x |` form is a parse error in v2 — use `| x: Any |` to retain fully dynamic behaviour.
+Every variable declaration uses `let`. Use `let x: Type.` for explicit declarations or `let x := expr.` for inference. For fully dynamic behaviour, declare `let x: Any.`.
 
 ```picoceci
-| x: Int  y: Float  running: Bool  name: String |
+let x: Int. let y: Float. let running: Bool. let name: String.
 ```
 
 When a typed variable is declared but not yet assigned, it is automatically initialised to its type's *zero value*:
@@ -332,19 +333,19 @@ stream nextPutAll: 'hello'; nl.
 ### 4.4 Assignment
 
 ```picoceci
-| x: Int  y: Int |
+let x: Int. let y: Int.
 x := 42.
 y := x + 1.
 ```
 
-Variables must be declared in a `| ... |` declaration before use within a scope.  Every declaration **requires** a type annotation (see §3.7).  Assigning a value whose kind does not match the declared type raises a `TypeError` at runtime:
+Variables must be declared with `let` before use within a scope.  Assigning a value whose kind does not match the declared type raises a `TypeError` at runtime:
 
 ```picoceci
-| count: Int |
+let count: Int.
 count := 'hello'.   "TypeError: count expects Int, got String"
 ```
 
-Use `| count: Any |` to allow any value without a type check.
+Use `let count: Any.` to allow any value without a type check.
 
 ### 4.5 Cascade
 
@@ -380,7 +381,7 @@ There are **no classes** in picoceci.  Instead, `object` defines a named prototy
 
 ```picoceci
 object Counter {
-    | count: Int |
+    let count: Int.
 
     inc [
         count := count + 1.
@@ -402,7 +403,7 @@ object Counter {
 }
 ```
 
-- `| count: Int |` — typed instance variable declaration (slot).  `count` is automatically initialised to `0` (the zero value for `Int`); no `init` method is needed for zeroing.
+- `let count: Int.` — typed instance variable declaration (slot).  `count` is automatically initialised to `0` (the zero value for `Int`); no `init` method is needed for zeroing.
 - Methods are unary (`inc`, `value`) or keyword (`at:`, `at:put:`) or binary (`+`).
 - `init` is still called automatically by `new` when defined, but is needed only for non-zero initialisation.
 - Methods can take parameters using keyword syntax: `add: n [ count := count + n. ^self ]`.
@@ -410,7 +411,7 @@ object Counter {
 ### 5.2 Creating instances
 
 ```picoceci
-| c: Counter |
+let c: Counter.
 c := Counter new.
 ```
 
@@ -443,7 +444,7 @@ Rules:
 For simple ad-hoc objects:
 
 ```picoceci
-| point: Any |
+let point: Any.
 point := object { x := 3. y := 4 }.
 Console println: point x printString.
 ```
@@ -477,7 +478,7 @@ picoceci uses **structural typing** — an object satisfies an interface if it r
 Declare a variable with an interface name as its type to hold any object satisfying that interface:
 
 ```picoceci
-| c: Incrementable |
+let c: Incrementable.
 c := LoggedCounter new.
 (c satisfies: Incrementable)
     ifTrue: [ Console println: 'yes' ].
@@ -531,13 +532,13 @@ x > 0
 ```picoceci
 #(1 2 3) do: [ :each | Console println: each printString ].
 
-| doubled: Array |
+let doubled: Array.
 doubled := #(1 2 3) collect: [ :each | each * 2 ].
 
-| evens: Array |
+let evens: Array.
 evens := #(1 2 3 4) select: [ :each | each \\ 2 = 0 ].
 
-| sum: Int |
+let sum: Int.
 sum := #(1 2 3) inject: 0 into: [ :acc :each | acc + each ].
 ```
 
@@ -565,7 +566,7 @@ A block is a first-class object encapsulating deferred computation.
 Blocks capture variables from their enclosing scope.
 
 ```picoceci
-| adder: Block |
+let adder: Block.
 adder := [ :n | [ :x | x + n ] ].
 (adder value: 5) value: 3.   "=> 8"
 ```
@@ -607,7 +608,7 @@ Error signal: 'something went wrong'.
 |---|---|
 | `Error` | Base error |
 | `MessageNotUnderstood` | Object received unknown message |
-| `TypeError` | Assignment type mismatch (v2 typed variables) |
+| `TypeError` | Assignment type mismatch |
 | `InterfaceError` | Argument does not satisfy interface |
 | `IndexOutOfBounds` | Array / string index out of range |
 | `IOError` | Filesystem / network failure |
@@ -660,7 +661,7 @@ TaskSupervisor supervise: [
 Queues carry a type parameter that restricts what may be sent.  Use `Queue<<TypeName>>` to declare a typed queue:
 
 ```picoceci
-| q: Queue<<Int>> |
+let q: Queue<<Int>>.
 q := Queue new: 10.
 
 "Producer"
@@ -672,7 +673,7 @@ Task spawn: [
 "Consumer"
 Task spawn: [
     [ true ] whileTrue: [
-        | item: Int |
+        let item: Int.
         item := q receive.
         Console println: item printString
     ]
@@ -693,7 +694,7 @@ Sending a value whose type does not match raises a `TypeError` at the point of s
 ### 10.3 Semaphores
 
 ```picoceci
-| sem: Any |
+let sem: Any.
 sem := Semaphore new.           "binary semaphore"
 sem := Semaphore counting: 4.  "counting semaphore, max 4"
 
@@ -714,7 +715,7 @@ sem take timeout: 500.
 ### 10.4 Timers
 
 ```picoceci
-| t: Any |
+let t: Any.
 t := Timer after: 500 do: [ Console println: 'fired' ].
 t := Timer every: 1000 do: [ led toggle ].
 t stop.
@@ -727,20 +728,17 @@ t reset.
 `Channel` is a picoceci-level abstraction over Queue with Go-like syntax and a mandatory type parameter:
 
 ```picoceci
-| ch: Channel<<Float>> |
+let ch: Channel<<Float>>.
 ch := Channel new: 5.
 ch <- 3.14.           "send — TypeError if not Float"
-| v: Float |
+let v: Float.
 v := <-ch.            "receive"
 ```
 
 Multiple typed channels can be declared together:
 
 ```picoceci
-| tempChan:  Channel<<Float>>
-  alertChan: Channel<<String>>
-  cmdQueue:  Queue<<Symbol>>
-|
+let tempChan: Channel<<Float>>. let alertChan: Channel<<String>>. let cmdQueue: Queue<<Symbol>>.
 ```
 
 Sending a value of the wrong type raises a `TypeError` at the point of send, before it reaches any consumer task.  Use `Channel<<Any>>` to allow mixed-type payloads.
@@ -856,13 +854,13 @@ Wifi listenOn: 2323 do: [ :session |
 ### 13.4 GPIO / peripheral objects (built-in)
 
 ```picoceci
-| led: Any |
+let led: Any.
 led := GPIO pin: 2 direction: #output.
 led high.
 led low.
 led toggle.
 
-| btn: Any |
+let btn: Any.
 btn := GPIO pin: 0 direction: #input pullup: true.
 btn waitForEdge: #rising timeout: 5000.
 ```
@@ -870,7 +868,7 @@ btn waitForEdge: #rising timeout: 5000.
 ### 13.5 UART
 
 ```picoceci
-| uart: Any |
+let uart: Any.
 uart := UART new: 0 baud: 115200.
 uart println: 'Hello from picoceci'.
 uart readLine.
@@ -879,10 +877,10 @@ uart readLine.
 ### 13.6 I²C / SPI
 
 ```picoceci
-| i2c: Any |
+let i2c: Any.
 i2c := I2C new: 0 sda: 21 scl: 22 speed: 400000.
 i2c writeTo: 16r48 bytes: #[1 2 3].
-| data: ByteArray |
+let data: ByteArray.
 data := i2c readFrom: 16r48 count: 4.
 ```
 
@@ -899,8 +897,11 @@ statement       = '^' expression
                 | varDecl
                 | expression
 
-varDecl         = '|' typedName { typedName } '|'
-typedName       = identifier ':' typeName
+varDecl         = letTypedDecl
+                | letInferredDecl
+
+letTypedDecl    = 'let' identifier ':' typeName '.'
+letInferredDecl = 'let' identifier ':=' expr '.'
 typeName        = 'Int' | 'Float' | 'Bool' | 'String' | 'Char'
                 | 'Symbol' | 'ByteArray' | 'Array' | 'Any' | 'Nil'
                 | IDENTIFIER
@@ -927,11 +928,11 @@ primary         = literal
 literal         = INTEGER | FLOAT | STRING | SYMBOL | CHARACTER
                 | BYTEARRAY | ARRAY | 'true' | 'false' | 'nil'
 
-block           = '[' (':' identifier)* ('|' varDecl)? statement* ']'
+block           = '[' (':' identifier)* statement* ']'
 
-objectDecl      = 'object' IDENTIFIER '{' varDecl? method* '}'
+objectDecl      = 'object' IDENTIFIER '{' statement* method* '}'
 
-method          = (UNARY | BINOP | KEYWORD+) '[' varDecl? statement* ']'
+method          = (UNARY | BINOP | KEYWORD+) '[' statement* ']'
 
 interfaceDecl   = 'interface' IDENTIFIER '{' methodSig* '}'
 
@@ -944,4 +945,4 @@ importDecl      = 'import' STRING '.'
 
 ---
 
-*End of picoceci Language Specification v2.0-draft*
+*End of picoceci Language Specification v3.0-draft*

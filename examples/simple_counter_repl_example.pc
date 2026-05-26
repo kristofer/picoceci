@@ -2,13 +2,13 @@
 "Paste this entire block into the REPL using paste mode (---)"
 
 object Counter {
-    | count: Int |
+    let count: Int.
     init [ count := 0 ]
     inc [ count := count + 1. ^ self ]
     value [ ^ count ]
 }
 
-| c1: Counter c2: Counter |
+let c1: Counter. let c2: Counter.
 c1 := Counter new.
 c2 := Counter new.
 

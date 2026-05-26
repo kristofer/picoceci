@@ -1,7 +1,7 @@
 # picoceci v3 — Variable Declaration Syntax Recommendation and Migration Plan
 
-Version: 0.2  
-Status: **Phases 1 and 2 implemented; phases 3-5 still pending**  
+Version: 0.3  
+Status: **Phases 1-4 implemented; phase 5 pending**  
 Author: picoceci contributors
 
 ---
@@ -30,8 +30,8 @@ This is explicit and type-safe, but awkward to read and edit in longer methods. 
   - Tree-walking interpreter and bytecode VM both implement `let`.
   - `let x := expr.` now locks the declared type from the initial runtime value.
   - `name := expr` now requires a prior declaration instead of implicitly creating a variable.
-- [ ] **Phase 3 — Repository-wide source rewrites**
-- [ ] **Phase 4 — Language spec and grammar documents update**
+- [x] **Phase 3 — Repository-wide source rewrites**
+- [x] **Phase 4 — Language spec and grammar documents update**
 - [ ] **Phase 5 — Compatibility removal and stabilization**
 
 Current implementation note:
@@ -125,7 +125,7 @@ Acceptance:
 
 ### Phase 3 — Repository-wide source rewrites (tests/examples/docs)
 
-Status: **Not started**
+Status: **Implemented**
 
 Scope:
 - Rewrite picoceci source in:
@@ -142,7 +142,7 @@ Acceptance:
 
 ### Phase 4 — Language spec and grammar documents update
 
-Status: **Not started**
+Status: **Implemented**
 
 Scope:
 - Update `LANGUAGE_SPEC.md`:

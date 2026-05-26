@@ -40,7 +40,7 @@ import_decl
 object_decl
     = "object" , IDENTIFIER , "{" ,
           [ compose_clause ]
-          [ var_decl ]
+          { slot_decl }
           { method_def }
       "}"
     ;
@@ -63,7 +63,6 @@ method_sig
 
 method_def
     = method_selector , "[" ,
-          [ var_decl ]
           { statement , [ "." ] }
       "]"
     ;
@@ -84,16 +83,21 @@ unary_selector
 
 statement
     = return_stmt
-    | var_decl
+    | let_decl
     | expression
     ;
 
-var_decl
-    = "|" , typed_name , { typed_name } , "|"
+slot_decl
+    = "let" , IDENTIFIER , ":" , type_name , "."
     ;
 
-typed_name
-    = IDENTIFIER , ":" , type_name
+let_decl
+    = "let" , IDENTIFIER ,
+      (
+          ":" , type_name
+        | ":=" , expression
+      ) ,
+      "."
     ;
 
 type_name
@@ -212,7 +216,6 @@ anon_object
 block
     = "[" ,
           [ { ":" , IDENTIFIER } , "|" ]    (* parameters *)
-          [ var_decl ]                        (* locals *)
           { statement , [ "." ] }
       "]"
     ;

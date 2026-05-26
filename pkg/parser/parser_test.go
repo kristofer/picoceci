@@ -119,18 +119,22 @@ func TestParser_Assignment(t *testing.T) {
 }
 
 func TestParser_GenericTypeVarDecl(t *testing.T) {
-	prog := parse(t, "| ch: Channel<<Float>> q: Queue<<Symbol>> |")
-	decl, ok := prog.Statements[0].(*ast.VarDecl)
+	prog := parse(t, "let ch: Channel<<Float>>. let q: Queue<<Symbol>>.")
+	decl1, ok := prog.Statements[0].(*ast.LetDecl)
 	if !ok {
-		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+		t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[0])
 	}
-	if got, want := decl.Types, []string{"Channel<<Float>>", "Queue<<Symbol>>"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("types: got %v, want %v", got, want)
+	decl2, ok := prog.Statements[1].(*ast.LetDecl)
+	if !ok {
+		t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[1])
+	}
+	if decl1.Type != "Channel<<Float>>" || decl2.Type != "Queue<<Symbol>>" {
+		t.Fatalf("types: got [%s %s], want [Channel<<Float>> Queue<<Symbol>>]", decl1.Type, decl2.Type)
 	}
 }
 
 func TestParser_ChannelReceiveSugar(t *testing.T) {
-	prog := parse(t, "| v: Float | v := <-ch.")
+	prog := parse(t, "let v: Float. v := <-ch.")
 	assign, ok := prog.Statements[1].(*ast.Assign)
 	if !ok {
 		t.Fatalf("expected *ast.Assign, got %T", prog.Statements[1])
@@ -148,51 +152,52 @@ func TestParser_ChannelReceiveSugar(t *testing.T) {
 }
 
 func TestParser_MultipleTypedChannelsDecl(t *testing.T) {
-	prog := parse(t, "| tempChan: Channel<<Float>> alertChan: Channel<<String>> cmdQueue: Queue<<Symbol>> |")
-	decl, ok := prog.Statements[0].(*ast.VarDecl)
-	if !ok {
-		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
-	}
+	prog := parse(t, "let tempChan: Channel<<Float>>. let alertChan: Channel<<String>>. let cmdQueue: Queue<<Symbol>>.")
 	wantNames := []string{"tempChan", "alertChan", "cmdQueue"}
 	wantTypes := []string{"Channel<<Float>>", "Channel<<String>>", "Queue<<Symbol>>"}
-	if len(decl.Names) != len(wantNames) || len(decl.Types) != len(wantTypes) {
-		t.Fatalf("got names=%v types=%v, want names=%v types=%v", decl.Names, decl.Types, wantNames, wantTypes)
-	}
 	for i := range wantNames {
-		if decl.Names[i] != wantNames[i] {
-			t.Fatalf("name[%d]: got %q, want %q", i, decl.Names[i], wantNames[i])
+		decl, ok := prog.Statements[i].(*ast.LetDecl)
+		if !ok {
+			t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[i])
 		}
-		if decl.Types[i] != wantTypes[i] {
-			t.Fatalf("type[%d]: got %q, want %q", i, decl.Types[i], wantTypes[i])
+		if decl.Name != wantNames[i] {
+			t.Fatalf("name[%d]: got %q, want %q", i, decl.Name, wantNames[i])
+		}
+		if decl.Type != wantTypes[i] {
+			t.Fatalf("type[%d]: got %q, want %q", i, decl.Type, wantTypes[i])
 		}
 	}
 }
 
 func TestParser_NestedGenericTypeVarDecl(t *testing.T) {
-	prog := parse(t, "| pipeline: Container<<Queue<<Int>>>> |")
-	decl, ok := prog.Statements[0].(*ast.VarDecl)
+	prog := parse(t, "let pipeline: Container<<Queue<<Int>>>>.")
+	decl, ok := prog.Statements[0].(*ast.LetDecl)
 	if !ok {
-		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+		t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[0])
 	}
-	if len(decl.Types) != 1 || decl.Types[0] != "Container<<Queue<<Int>>>>" {
-		t.Fatalf("types: got %v, want [Container<<Queue<<Int>>>>]", decl.Types)
+	if decl.Type != "Container<<Queue<<Int>>>>" {
+		t.Fatalf("type: got %q, want %q", decl.Type, "Container<<Queue<<Int>>>>")
 	}
 }
 
 func TestParser_VarDecl(t *testing.T) {
-	prog := parse(t, "| x: Int  y: Float  z: Any |")
-	vd, ok := prog.Statements[0].(*ast.VarDecl)
-	if !ok {
-		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+	prog := parse(t, "let x: Int. let y: Float. let z: Any.")
+	want := []struct {
+		name string
+		typ  string
+	}{
+		{name: "x", typ: "Int"},
+		{name: "y", typ: "Float"},
+		{name: "z", typ: "Any"},
 	}
-	if len(vd.Names) != 3 {
-		t.Errorf("names: got %v, want [x y z]", vd.Names)
-	}
-	if len(vd.Types) != 3 {
-		t.Errorf("types: got %v, want [Int Float Any]", vd.Types)
-	}
-	if vd.Types[0] != "Int" || vd.Types[1] != "Float" || vd.Types[2] != "Any" {
-		t.Errorf("types: got %v, want [Int Float Any]", vd.Types)
+	for i := range want {
+		decl, ok := prog.Statements[i].(*ast.LetDecl)
+		if !ok {
+			t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[i])
+		}
+		if decl.Name != want[i].name || decl.Type != want[i].typ {
+			t.Fatalf("decl[%d]: got (%s, %s), want (%s, %s)", i, decl.Name, decl.Type, want[i].name, want[i].typ)
+		}
 	}
 }
 
@@ -240,7 +245,7 @@ func TestParser_VarDecl_BareIdentifierError(t *testing.T) {
 }
 
 func TestParser_VarDecl_GenericMissingTypeError(t *testing.T) {
-	l := lexer.NewString("| ch: Channel<<>> |")
+	l := lexer.NewString("let ch: Channel<<>>.")
 	p := parser.New(l)
 	_, err := p.ParseProgram()
 	if err == nil {
@@ -284,7 +289,7 @@ func TestParser_Cascade(t *testing.T) {
 func TestParser_ObjectDecl(t *testing.T) {
 	src := `
 object Counter {
-    | count: Int |
+    let count: Int.
     init [ count := 0 ]
     inc  [ count := count + 1. ^self ]
     value [ ^count ]
@@ -445,7 +450,7 @@ func TestParser_LanguageSpec_Examples(t *testing.T) {
 		{"binary message", "3 + 4."},
 		{"keyword message one arg", "collection at: 2."},
 		{"keyword message two args", "dict at: #key put: value."},
-		{"assignment", "| x: Any  y: Any |\nx := 42.\ny := x + 1."},
+		{"assignment", "let x: Any. let y: Any.\nx := 42.\ny := x + 1."},
 		{"cascade", "Transcript\n    print: 'a';\n    print: 'b';\n    nl."},
 		{"return", "^value."},
 		{"self", "self."},
@@ -455,14 +460,14 @@ func TestParser_LanguageSpec_Examples(t *testing.T) {
 		// §5.1 Object declaration
 		{"object Counter", `
 object Counter {
-    | count: Int |
+    let count: Int.
     init [ count := 0 ]
     inc  [ count := count + 1. ^self ]
     dec  [ count := count - 1. ^self ]
     value [ ^count ]
     printString [ ^'Counter(', count printString, ')' ]
 }`},
-		{"object creating instances", "| c: Counter |\nc := Counter new."},
+		{"object creating instances", "let c: Counter.\nc := Counter new."},
 		{"object composition", `
 object LoggedCounter {
     compose Counter.
@@ -472,7 +477,7 @@ object LoggedCounter {
         ^self
     ]
 }`},
-		{"anonymous object literal", "| point: Any |\npoint := object { x := 3. y := 4 }."},
+		{"anonymous object literal", "let point: Any.\npoint := object { x := 3. y := 4 }."},
 		// §6 Interfaces
 		{"interface", `
 interface Incrementable {
@@ -488,21 +493,21 @@ interface Incrementable {
 		{"whileFalse:", "[ x < 0 ] whileFalse: [ x := x + 1 ]."},
 		{"timesRepeat:", "5 timesRepeat: [ Console println: 'tick' ]."},
 		{"do:", "#(1 2 3) do: [ :each | Console println: each printString ]."},
-		{"collect:", "| doubled: Array |\ndoubled := #(1 2 3) collect: [ :each | each * 2 ]."},
-		{"inject:into:", "| sum: Int |\nsum := #(1 2 3) inject: 0 into: [ :acc :each | acc + each ]."},
+		{"collect:", "let doubled: Array.\ndoubled := #(1 2 3) collect: [ :each | each * 2 ]."},
+		{"inject:into:", "let sum: Int.\nsum := #(1 2 3) inject: 0 into: [ :acc :each | acc + each ]."},
 		// §10 Concurrency
-		{"task spawn", "| task: Any |\ntask := Task spawn: [ Console println: 'tick'. Task delay: 1000 ].\ntask priority: 2."},
-		{"typed queue", "| q: Queue<<Int>> |\nq := Queue new: 10.\nTask spawn: [ q send: 42. q send: 99 ]."},
-		{"typed channel", "| ch: Channel<<Float>> |\nch := Channel new: 5.\nch <- 3.14.\n| v: Float |\nv := <-ch."},
-		{"multiple typed channels", "| tempChan: Channel<<Float>> alertChan: Channel<<String>> cmdQueue: Queue<<Symbol>> |"},
+		{"task spawn", "let task: Any.\ntask := Task spawn: [ Console println: 'tick'. Task delay: 1000 ].\ntask priority: 2."},
+		{"typed queue", "let q: Queue<<Int>>.\nq := Queue new: 10.\nTask spawn: [ q send: 42. q send: 99 ]."},
+		{"typed channel", "let ch: Channel<<Float>>.\nch := Channel new: 5.\nch <- 3.14.\nlet v: Float.\nv := <-ch."},
+		{"multiple typed channels", "let tempChan: Channel<<Float>>. let alertChan: Channel<<String>>. let cmdQueue: Queue<<Symbol>>."},
 		// §8 Blocks
 		{"block two params", "[ :x :y | x + y ]."},
-		{"block closure", "| adder: Any |\nadder := [ :n | [ :x | x + n ] ].\n(adder value: 5) value: 3."},
+		{"block closure", "let adder: Any.\nadder := [ :n | [ :x | x + n ] ].\n(adder value: 5) value: 3."},
 		// §9 Error handling
 		{"on:do:", "[ someRiskyOperation ]\n    on: Error\n    do: [ :err | Console println: err messageText ]."},
 		{"ensure:", "[ file read ]\n    ensure: [ file close ]."},
 		// §13 Interop
-		{"canal capability", "| cap: Any |\ncap := Canal capability: #uart0.\ncap send: 'hello\\n' asBytes.\ncap close."},
+		{"canal capability", "let cap: Any.\ncap := Canal capability: #uart0.\ncap send: 'hello\\n' asBytes.\ncap close."},
 		// import
 		{"import", "import 'Counter'."},
 	}
@@ -563,62 +568,68 @@ func TestParser_ThisContext(t *testing.T) {
 // --- typed variable tests ---------------------------------------------------
 
 func TestParser_TypedVarDecl_Single(t *testing.T) {
-	prog := parse(t, "| x: Int |")
-	vd, ok := prog.Statements[0].(*ast.VarDecl)
+	prog := parse(t, "let x: Int.")
+	vd, ok := prog.Statements[0].(*ast.LetDecl)
 	if !ok {
-		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+		t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[0])
 	}
-	if len(vd.Names) != 1 || vd.Names[0] != "x" {
-		t.Errorf("names: got %v, want [x]", vd.Names)
+	if vd.Name != "x" {
+		t.Errorf("name: got %q, want %q", vd.Name, "x")
 	}
-	if len(vd.Types) != 1 || vd.Types[0] != "Int" {
-		t.Errorf("types: got %v, want [Int]", vd.Types)
+	if vd.Type != "Int" {
+		t.Errorf("type: got %q, want %q", vd.Type, "Int")
 	}
 }
 
 func TestParser_TypedVarDecl_Multiple(t *testing.T) {
-	prog := parse(t, "| x: Float  y: Bool  z: String |")
-	vd, ok := prog.Statements[0].(*ast.VarDecl)
+	prog := parse(t, "let x: Float. let y: Bool. let z: String.")
+	decl0, ok := prog.Statements[0].(*ast.LetDecl)
 	if !ok {
-		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+		t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[0])
 	}
-	if len(vd.Names) != 3 {
-		t.Fatalf("names: got %d, want 3", len(vd.Names))
+	decl1, ok := prog.Statements[1].(*ast.LetDecl)
+	if !ok {
+		t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[1])
+	}
+	decl2, ok := prog.Statements[2].(*ast.LetDecl)
+	if !ok {
+		t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[2])
 	}
 	wantTypes := []string{"Float", "Bool", "String"}
-	for i, wt := range wantTypes {
-		if vd.Types[i] != wt {
-			t.Errorf("types[%d]: got %q, want %q", i, vd.Types[i], wt)
+	gotTypes := []string{decl0.Type, decl1.Type, decl2.Type}
+	for i := range wantTypes {
+		if gotTypes[i] != wantTypes[i] {
+			t.Errorf("types[%d]: got %q, want %q", i, gotTypes[i], wantTypes[i])
 		}
 	}
 }
 
 func TestParser_TypedVarDecl_AnyType(t *testing.T) {
-	prog := parse(t, "| x: Any |")
-	vd, ok := prog.Statements[0].(*ast.VarDecl)
+	prog := parse(t, "let x: Any.")
+	vd, ok := prog.Statements[0].(*ast.LetDecl)
 	if !ok {
-		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+		t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[0])
 	}
-	if len(vd.Types) != 1 || vd.Types[0] != "Any" {
-		t.Errorf("types: got %v, want [Any]", vd.Types)
+	if vd.Type != "Any" {
+		t.Errorf("type: got %q, want %q", vd.Type, "Any")
 	}
 }
 
 func TestParser_TypedVarDecl_UserType(t *testing.T) {
-	prog := parse(t, "| c: Counter |")
-	vd, ok := prog.Statements[0].(*ast.VarDecl)
+	prog := parse(t, "let c: Counter.")
+	vd, ok := prog.Statements[0].(*ast.LetDecl)
 	if !ok {
-		t.Fatalf("expected *ast.VarDecl, got %T", prog.Statements[0])
+		t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[0])
 	}
-	if len(vd.Types) != 1 || vd.Types[0] != "Counter" {
-		t.Errorf("types: got %v, want [Counter]", vd.Types)
+	if vd.Type != "Counter" {
+		t.Errorf("type: got %q, want %q", vd.Type, "Counter")
 	}
 }
 
 func TestParser_TypedObjectSlots(t *testing.T) {
 	src := `
 object TempSensor {
-    | bus: Any  address: Int  lastC: Float |
+    let bus: Any. let address: Int. let lastC: Float.
     reading [ ^lastC ]
 }`
 	prog := parse(t, src)
@@ -644,8 +655,8 @@ object TempSensor {
 func TestParser_TypedMethodLocals(t *testing.T) {
 	src := `
 object Foo {
-    | x: Int |
-    compute [ | result: Int | result := x + 1. ^result ]
+    let x: Int.
+    compute [ let result: Int. result := x + 1. ^result ]
 }`
 	prog := parse(t, src)
 	decl, ok := prog.Statements[0].(*ast.ObjectDecl)
@@ -656,25 +667,33 @@ object Foo {
 		t.Fatalf("expected 1 method, got %d", len(decl.Methods))
 	}
 	m := decl.Methods[0]
-	if len(m.Locals) != 1 || m.Locals[0] != "result" {
-		t.Errorf("locals: got %v, want [result]", m.Locals)
+	if len(m.Body) < 1 {
+		t.Fatalf("expected method body statements, got 0")
 	}
-	if len(m.LocalTypes) != 1 || m.LocalTypes[0] != "Int" {
-		t.Errorf("local types: got %v, want [Int]", m.LocalTypes)
+	localDecl, ok := m.Body[0].(*ast.LetDecl)
+	if !ok {
+		t.Fatalf("expected first method statement to be *ast.LetDecl, got %T", m.Body[0])
+	}
+	if localDecl.Name != "result" || localDecl.Type != "Int" {
+		t.Fatalf("local declaration: got (%s, %s), want (result, Int)", localDecl.Name, localDecl.Type)
 	}
 }
 
 func TestParser_TypedBlockLocals(t *testing.T) {
-	src := "[ | x: Float | x + 1.0 ]."
+	src := "[ let x: Float. x + 1.0 ]."
 	prog := parse(t, src)
 	blk, ok := prog.Statements[0].(*ast.Block)
 	if !ok {
 		t.Fatalf("expected *ast.Block, got %T", prog.Statements[0])
 	}
-	if len(blk.Locals) != 1 || blk.Locals[0] != "x" {
-		t.Errorf("locals: got %v, want [x]", blk.Locals)
+	if len(blk.Body) < 1 {
+		t.Fatalf("expected block body statements, got 0")
 	}
-	if len(blk.LocalTypes) != 1 || blk.LocalTypes[0] != "Float" {
-		t.Errorf("local types: got %v, want [Float]", blk.LocalTypes)
+	localDecl, ok := blk.Body[0].(*ast.LetDecl)
+	if !ok {
+		t.Fatalf("expected first block statement to be *ast.LetDecl, got %T", blk.Body[0])
+	}
+	if localDecl.Name != "x" || localDecl.Type != "Float" {
+		t.Fatalf("local declaration: got (%s, %s), want (x, Float)", localDecl.Name, localDecl.Type)
 	}
 }

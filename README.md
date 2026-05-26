@@ -23,7 +23,7 @@ picoceci is a message-passing interpreted language that borrows Smalltalk's eleg
 Console println: 'Hello, picoceci!'.
 
 "Fibonacci using a block"
-| fib: Block |
+let fib: Block.
 fib := [ :n |
     (n <= 1)
         ifTrue:  [ n ]
@@ -31,9 +31,9 @@ fib := [ :n |
 ].
 Console println: (fib value: 10) printString.
 
-"Composing objects — v2 typed slots"
+"Composing objects — v3 typed slots"
 object Counter {
-    | count: Int |
+    let count: Int.
     inc   [ count := count + 1. ^self ]
     value [ ^count ]
 }
@@ -43,7 +43,7 @@ object LoggedCounter {
     inc [ super inc. Console println: 'incremented'. ^self ]
 }
 
-| c: LoggedCounter |
+let c: LoggedCounter.
 c := LoggedCounter new.
 c inc; inc; inc.
 Console println: c value printString.   "=> 3"
@@ -54,10 +54,10 @@ Console println: c value printString.   "=> 3"
 ```
 picoceci/
 ├── README.md               ← you are here
-├── LANGUAGE_SPEC.md        ← full language specification (v2)
+├── LANGUAGE_SPEC.md        ← full language specification (v3 draft)
 ├── IMPLEMENTATION_PLAN.md  ← phased implementation roadmap (agent-ready)
 ├── docs/
-│   ├── grammar.ebnf            ← formal EBNF grammar (v2)
+│   ├── grammar.ebnf            ← formal EBNF grammar (v3)
 │   ├── TYPED_VARIABLES_PLAN.md ← v2 typed-variable design and implementation plan
 │   ├── V3_VARIABLE_DECLARATIONS_PLAN.md ← v3 declaration-syntax recommendation and phased migration plan
 │   ├── stdlib.md               ← standard library reference
@@ -70,9 +70,11 @@ picoceci/
 
 🚧 **Specification phase** — the documents above define everything an agent (or human) needs to implement the interpreter and runtime.
 
-**v2** — typed variable declarations are now required.  Every variable must carry an explicit type annotation (`| x: Int |`); bare `| x |` is a parse error.  Use `| x: Any |` to opt into dynamic typing.  See [`docs/TYPED_VARIABLES_PLAN.md`](docs/TYPED_VARIABLES_PLAN.md) for the full design rationale and implementation plan.
+**v3** — declaration syntax uses statement-style `let`:
+- typed declarations: `let x: Int.`
+- inferred declarations: `let x := expr.`
 
-**v3 proposal** — variable declaration ergonomics are being evaluated for a `let`-style syntax.  See [`docs/V3_VARIABLE_DECLARATIONS_PLAN.md`](docs/V3_VARIABLE_DECLARATIONS_PLAN.md) for recommendation details, parser/runtime trade-offs, and a phased migration plan.
+Assignments (`x := expr`) require prior declaration in scope. See [`docs/V3_VARIABLE_DECLARATIONS_PLAN.md`](docs/V3_VARIABLE_DECLARATIONS_PLAN.md) for migration details.
 
 ## Current progress snapshot
 

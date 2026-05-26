@@ -2,13 +2,13 @@
 "This version works with the current picoceci implementation"
 
 object Counter {
-    | count: Int |
+    let count: Int.
     init [ count := 0 ]
     inc [ count := count + 1. ^ self ]
     value [ ^ count ]
 }
 
-| counter1: Counter counter2: Counter |
+let counter1: Counter. let counter2: Counter.
 counter1 := Counter new.
 counter2 := Counter new.
 

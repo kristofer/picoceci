@@ -291,7 +291,7 @@ Interchangeable names for the primary text output stream (UART0 on MCU, stdout o
 ### `ReadStream`
 
 ```picoceci
-| s: Any |
+let s: Any.
 s := ReadStream on: #(1 2 3 4 5).
 s next.         "=> 1"
 s next.         "=> 2"
@@ -319,7 +319,7 @@ s position: 0.  "rewind"
 ### `WriteStream`
 
 ```picoceci
-| s: Any |
+let s: Any.
 s := WriteStream on: String new.
 s nextPutAll: 'Hello'.
 s nextPut: $,.
@@ -372,7 +372,7 @@ Dynamically resizable array.
 Hash map with symbol or string keys.
 
 ```picoceci
-| d: Any |
+let d: Any.
 d := Dictionary new.
 d at: #name put: 'picoceci'.
 d at: #version put: 1.
@@ -591,10 +591,10 @@ pin onEdge: #falling do: [ Console println: 'fell' ].
 ## Module: `uart`
 
 ```picoceci
-| uart: Any |
+let uart: Any.
 uart := UART new: 0 baud: 115200.
 uart println: 'ready'.
-| line: Any |
+let line: Any.
 line := uart readLine.
 ```
 
@@ -616,7 +616,7 @@ line := uart readLine.
 | i2c |
 i2c := I2C new: 0 sda: 21 scl: 22 speed: 400000.
 i2c writeTo: 16r48 bytes: #[1 2 3].
-| data: Any |
+let data: Any.
 data := i2c readFrom: 16r48 count: 4.
 ```
 
@@ -633,9 +633,9 @@ data := i2c readFrom: 16r48 count: 4.
 ## Module: `spi`
 
 ```picoceci
-| spi: Any |
+let spi: Any.
 spi := SPI new: 0 sck: 18 mosi: 23 miso: 19 cs: 5 speed: 1000000.
-| result: Any |
+let result: Any.
 result := spi transfer: #[16r9F 0 0 0].
 ```
 

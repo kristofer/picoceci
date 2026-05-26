@@ -1,7 +1,7 @@
 " MathUtils - math utility object for SD card integration tests "
 
 object MathUtils {
-	| result: Int |
+	let result: Int.
 
 	square: n [
 		result := n * n.

@@ -1,7 +1,7 @@
 " SDCardModule - a test object for SD card integration tests "
 
 object SDCardTest {
-	| value: Any |
+	let value: Any.
 
 	initialize [
 		value := 'sd-card-test'.

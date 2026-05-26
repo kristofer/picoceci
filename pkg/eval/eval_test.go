@@ -102,7 +102,7 @@ func TestEval_IntAddition(t *testing.T) {
 }
 
 func TestEval_ChannelRoundTrip(t *testing.T) {
-	obj := evalSrc(t, "| ch: Channel<<Float>> | ch := Channel new: 2. ch <- 3.14. <-ch.")
+	obj := evalSrc(t, "let ch: Channel<<Float>>. ch := Channel new: 2. ch <- 3.14. <-ch.")
 	if obj.Kind != object.KindFloat || obj.FVal != 3.14 {
 		t.Errorf("channel round trip: got %v", obj.PrintString())
 	}
@@ -243,14 +243,14 @@ func TestEval_BoolNot(t *testing.T) {
 // --- assignment and variable ------------------------------------------------
 
 func TestEval_Assignment(t *testing.T) {
-	obj := evalSrc(t, "| x: Any | x := 42. x.")
+	obj := evalSrc(t, "let x: Any. x := 42. x.")
 	if obj.IVal != 42 {
 		t.Errorf("assignment: got %v", obj.PrintString())
 	}
 }
 
 func TestEval_MultipleAssignments(t *testing.T) {
-	obj := evalSrc(t, "| x: Int  y: Int | x := 3. y := 4. x + y.")
+	obj := evalSrc(t, "let x: Int. let y: Int. x := 3. y := 4. x + y.")
 	if obj.IVal != 7 {
 		t.Errorf("x+y: got %v", obj.PrintString())
 	}
@@ -273,14 +273,14 @@ func TestEval_LetDeclInferredLocksType(t *testing.T) {
 // --- blocks -----------------------------------------------------------------
 
 func TestEval_BlockValue(t *testing.T) {
-	obj := evalSrc(t, "| b: Any | b := [ 42 ]. b value.")
+	obj := evalSrc(t, "let b: Any. b := [ 42 ]. b value.")
 	if obj.IVal != 42 {
 		t.Errorf("block value: got %v", obj.PrintString())
 	}
 }
 
 func TestEval_BlockWithArg(t *testing.T) {
-	obj := evalSrc(t, "| b: Any | b := [ :x | x + 1 ]. b value: 5.")
+	obj := evalSrc(t, "let b: Any. b := [ :x | x + 1 ]. b value: 5.")
 	if obj.IVal != 6 {
 		t.Errorf("block value:: got %v", obj.PrintString())
 	}
@@ -288,7 +288,7 @@ func TestEval_BlockWithArg(t *testing.T) {
 
 func TestEval_BlockClosure(t *testing.T) {
 	src := `
-| adder: Any  result: Int |
+let adder: Any. let result: Int.
 adder := [ :n | [ :x | x + n ] ].
 result := (adder value: 5) value: 3.
 result.`
@@ -300,7 +300,7 @@ result.`
 
 func TestEval_WhileTrue(t *testing.T) {
 	src := `
-| x: Int |
+let x: Int.
 x := 0.
 [ x < 5 ] whileTrue: [ x := x + 1 ].
 x.`
@@ -312,7 +312,7 @@ x.`
 
 func TestEval_TimesRepeat(t *testing.T) {
 	src := `
-| x: Int |
+let x: Int.
 x := 0.
 5 timesRepeat: [ x := x + 1 ].
 x.`
@@ -367,12 +367,12 @@ func TestEval_ArrayIndexOutOfBounds(t *testing.T) {
 func TestEval_ObjectDecl_New(t *testing.T) {
 	src := `
 object Counter {
-    | count: Int |
+    let count: Int.
     init  [ count := 0 ]
     inc   [ count := count + 1. ^self ]
     value [ ^count ]
 }
-| c: Counter |
+let c: Counter.
 c := Counter new.
 c value.`
 	obj := evalSrc(t, src)
@@ -384,12 +384,12 @@ c value.`
 func TestEval_ObjectDecl_Method(t *testing.T) {
 	src := `
 object Counter {
-    | count: Int |
+    let count: Int.
     init  [ count := 0 ]
     inc   [ count := count + 1. ^self ]
     value [ ^count ]
 }
-| c: Counter |
+let c: Counter.
 c := Counter new.
 c inc.
 c inc.
@@ -429,14 +429,14 @@ func TestEval_AssignmentRequiresPriorDeclaration(t *testing.T) {
 func TestEval_Composition_SlotsInherited(t *testing.T) {
 	src := `
 object Base {
-    | x: Int |
+    let x: Int.
     init  [ x := 10 ]
     getX  [ ^x ]
 }
 object Derived {
     compose Base.
 }
-| d: Derived |
+let d: Derived.
 d := Derived new.
 d getX.`
 	obj := evalSrc(t, src)
@@ -448,7 +448,7 @@ d getX.`
 func TestEval_Composition_MethodInherited(t *testing.T) {
 	src := `
 object Counter {
-    | count: Int |
+    let count: Int.
     init  [ count := 0 ]
     inc   [ count := count + 1. ^self ]
     value [ ^count ]
@@ -460,7 +460,7 @@ object LoggedCounter {
         ^self
     ]
 }
-| c: LoggedCounter |
+let c: LoggedCounter.
 c := LoggedCounter new.
 c inc.
 c inc.
@@ -474,7 +474,7 @@ c value.`
 func TestEval_Composition_SuperDispatch(t *testing.T) {
 	src := `
 object Base {
-    | x: Int |
+    let x: Int.
     init  [ x := 0 ]
     inc   [ x := x + 1. ^self ]
     value [ ^x ]
@@ -487,7 +487,7 @@ object Child {
         ^self
     ]
 }
-| c: Child |
+let c: Child.
 c := Child new.
 c inc.
 c value.`
@@ -501,19 +501,19 @@ func TestEval_Composition_GlobalAccessFromMethod(t *testing.T) {
 	// Methods must be able to access global variables like Counter.
 	src := `
 object Foo {
-    | n: Int |
+    let n: Int.
     init  [ n := 0 ]
     run   [ n := n + 1. ^n ]
 }
 object Bar {
     compose Foo.
     run [
-        | result: Int |
+        let result: Int.
         result := super run.
         ^result * 2
     ]
 }
-| b: Bar |
+let b: Bar.
 b := Bar new.
 b run.`
 	obj := evalSrc(t, src)
@@ -642,7 +642,7 @@ func TestEval_ArrayDetect_NotFound(t *testing.T) {
 
 func TestEval_ToDo(t *testing.T) {
 	src := `
-| sum: Int |
+let sum: Int.
 sum := 0.
 1 to: 5 do: [ :i | sum := sum + i ].
 sum.`
@@ -656,35 +656,35 @@ sum.`
 
 func TestEval_TypedVarDecl_ZeroValues(t *testing.T) {
 	// Int zero value is 0
-	obj := evalSrc(t, "| x: Int | x.")
+	obj := evalSrc(t, "let x: Int. x.")
 	if obj.Kind != object.KindSmallInt || obj.IVal != 0 {
 		t.Errorf("Int zero value: got %v, want 0", obj.PrintString())
 	}
 }
 
 func TestEval_TypedVarDecl_FloatZero(t *testing.T) {
-	obj := evalSrc(t, "| x: Float | x.")
+	obj := evalSrc(t, "let x: Float. x.")
 	if obj.Kind != object.KindFloat || obj.FVal != 0.0 {
 		t.Errorf("Float zero value: got %v, want 0.0", obj.PrintString())
 	}
 }
 
 func TestEval_TypedVarDecl_BoolZero(t *testing.T) {
-	obj := evalSrc(t, "| x: Bool | x.")
+	obj := evalSrc(t, "let x: Bool. x.")
 	if obj != object.False {
 		t.Errorf("Bool zero value: got %v, want false", obj.PrintString())
 	}
 }
 
 func TestEval_TypedVarDecl_StringZero(t *testing.T) {
-	obj := evalSrc(t, "| x: String | x.")
+	obj := evalSrc(t, "let x: String. x.")
 	if obj.Kind != object.KindString || obj.SVal != "" {
 		t.Errorf("String zero value: got %v, want empty string", obj.PrintString())
 	}
 }
 
 func TestEval_TypedVarDecl_AnyIsNil(t *testing.T) {
-	obj := evalSrc(t, "| x: Any | x.")
+	obj := evalSrc(t, "let x: Any. x.")
 	if !obj.IsNil() {
 		t.Errorf("Any zero value: got %v, want nil", obj.PrintString())
 	}
@@ -692,7 +692,7 @@ func TestEval_TypedVarDecl_AnyIsNil(t *testing.T) {
 
 func TestEval_TypedVar_TypeCheckPasses(t *testing.T) {
 	// Assigning correct type should work fine
-	obj := evalSrc(t, "| x: Int | x := 42. x.")
+	obj := evalSrc(t, "let x: Int. x := 42. x.")
 	if obj.Kind != object.KindSmallInt || obj.IVal != 42 {
 		t.Errorf("typed assignment: got %v, want 42", obj.PrintString())
 	}
@@ -700,7 +700,7 @@ func TestEval_TypedVar_TypeCheckPasses(t *testing.T) {
 
 func TestEval_TypedVar_TypeCheckFails(t *testing.T) {
 	// Assigning wrong type should raise TypeError
-	err := evalErr(t, "| x: Int | x := 'hello'.")
+	err := evalErr(t, "let x: Int. x := 'hello'.")
 	if !strings.Contains(err.Error(), "TypeError") {
 		t.Errorf("expected TypeError, got %v", err)
 	}
@@ -715,7 +715,7 @@ func TestEval_LetInferred_TypeCheckFails(t *testing.T) {
 
 func TestEval_TypedVar_AnyAllowsAnyType(t *testing.T) {
 	// Any-typed vars accept any value
-	obj := evalSrc(t, "| x: Any | x := 'hello'. x.")
+	obj := evalSrc(t, "let x: Any. x := 'hello'. x.")
 	if obj.Kind != object.KindString || obj.SVal != "hello" {
 		t.Errorf("Any typed var: got %v, want 'hello'", obj.PrintString())
 	}
@@ -724,12 +724,12 @@ func TestEval_TypedVar_AnyAllowsAnyType(t *testing.T) {
 func TestEval_TypedSlot_TypeCheckPasses(t *testing.T) {
 	src := `
 object Box {
-    | val: Int |
+    let val: Int.
     init  [ val := 0 ]
     set: v [ val := v ]
     get    [ ^val ]
 }
-| b: Box |
+let b: Box.
 b := Box new.
 b set: 99.
 b get.`
@@ -742,11 +742,11 @@ b get.`
 func TestEval_TypedSlot_TypeCheckFails(t *testing.T) {
 	src := `
 object Box {
-    | val: Int |
+    let val: Int.
     init  [ val := 0 ]
     set: v [ val := v ]
 }
-| b: Box |
+let b: Box.
 b := Box new.
 b set: 'oops'.`
 	err := evalErr(t, src)
@@ -759,10 +759,10 @@ func TestEval_TypedSlot_ZeroValue(t *testing.T) {
 	// Float slot zero value is 0.0 (no explicit init needed)
 	src := `
 object Sensor {
-    | temp: Float |
+    let temp: Float.
     reading [ ^temp ]
 }
-| s: Sensor |
+let s: Sensor.
 s := Sensor new.
 s reading.`
 	obj := evalSrc(t, src)
