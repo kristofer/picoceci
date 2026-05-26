@@ -145,5 +145,10 @@ Acceptance:
 ## 5. Open decisions before implementation
 
 1. Should inferred `let x := expr` infer user-defined object/interface names, or collapse to a broad type (`Any` or a dedicated root object type)?
-2. Should shadowing with `let` be allowed by default in inner scopes, or require an explicit keyword later?
-3. Should a temporary parser warning be added when v2 `| ... |` syntax is used during the compatibility window?
+   _User says infer the object/interface names as needed._
+3. Should shadowing with `let` be allowed by default in inner scopes, or require an explicit keyword later?
+   _User says the shadowing should be allowed. without any obvious compiler/intepreter message warning._
+5. Should a temporary parser warning be added when v2 `| ... |` syntax is used during the compatibility window?
+   _Yes, a warning is fine, but the compatibility wondow will be very short, so do not do a lot of work to accomodate this._
+
+USER answered these questions.
