@@ -557,7 +557,7 @@ object Stack {
 
     init    [ storage := Array new: 64. top := 0 ]
     push: v [ top := top + 1. storage at: top put: v. ^self ]
-    pop     [ | v: Any | v := storage at: top. top := top - 1. ^v ]
+    pop     [ let v: Any. v := storage at: top. top := top - 1. ^v ]
     peek    [ ^storage at: top ]
     isEmpty [ ^top = 0 ]
     size    [ ^top ]
@@ -694,7 +694,8 @@ i modulo 15 equals 0, then print FizzBuzz; otherwise..."
 ```picoceci
 let gcd: Any.
 gcd := [ :a :b |
-    [ b ~= 0 ] whileTrue: [ | t: Int |
+    [ b ~= 0 ] whileTrue: [
+        let t: Int.
         t := b.
         b := a \\ b.
         a := t
@@ -729,7 +730,8 @@ order. The `=` message on strings does value comparison. One line of logic.
 
 ```picoceci
 let power: Any.
-power := [ :base :exp | let result: Int.
+power := [ :base :exp |
+    let result: Int.
     result := 1.
     exp timesRepeat: [ result := result * base ].
     result
@@ -753,7 +755,8 @@ state:
 let makeAccumulator: Any.
 let counter1: Any.
 let counter2: Any.
-makeAccumulator := [ :start | | n: Any |
+makeAccumulator := [ :start |
+    let n: Any.
     n := start.
     [ :amount | n := n + amount. n ]
 ].
@@ -774,7 +777,8 @@ factory functions, and Go closures.
 ## 3.9 Bubble Sort
 
 ```picoceci
-let arr: Array  n: Int.
+let arr: Array.
+let n: Int.
 let swapped: Bool.
 arr := Array new: 6.
 arr at: 1 put: 64.
@@ -787,11 +791,12 @@ n := arr size.
 [   swapped := false.
     1 to: (n - 1) do: [ :i |
         ((arr at: i) > (arr at: i + 1))
-            ifTrue: [ | t: Int |
-                t := arr at: i.
-                arr at: i put: (arr at: i + 1).
-                arr at: i + 1 put: t.
-                swapped := true
+        ifTrue: [
+            let t: Int.
+            t := arr at: i.
+            arr at: i put: (arr at: i + 1).
+            arr at: i + 1 put: t.
+            swapped := true
             ]
     ].
     swapped ] whileTrue.
@@ -969,7 +974,7 @@ Task spawn: [
 "Receiver task"
 Task spawn: [
     5 timesRepeat: [
-        | value: Int |
+        let value: Int.
         value := <-ch.         "receive from the channel"
         Console println: 'Got: ' , value printString
     ]
@@ -1094,7 +1099,7 @@ Task spawn: [
 "Consumer: log each reading"
 Task spawn: [
     [ true ] whileTrue: [
-        | temp: Float |
+        let temp: Float.
         temp := <-readings.
         Console println: 'Temperature: ' , temp printString , ' C'
     ]
@@ -1166,7 +1171,7 @@ alertChan := Channel new: 10.
 "Monitor task"
 Task spawn: [
     [ true ] whileTrue: [
-        | temp: Float |
+        let temp: Float.
         temp := <-tempChan.
         (temp > 30.0)
             ifTrue: [
@@ -1178,7 +1183,7 @@ Task spawn: [
 "Alert handler task"
 Task spawn: [
     [ true ] whileTrue: [
-        | alert: String |
+        let alert: String.
         alert := <-alertChan.
         Console println: alert.
         "Could also: flash a warning LED, send a network message, etc."
@@ -1685,7 +1690,8 @@ led toggle; blink; off.            "cascade (same receiver)"
 
 ```picoceci
 object Foo {
-    | slot1: Int  slot2: String.
+    let slot1: Int.
+    let slot2: String.
     init: a and: b [ slot1 := a. slot2 := b ]
     sum            [ ^slot1 ]
 }
@@ -1733,7 +1739,11 @@ x > 0 ifTrue: [ ... ] ifFalse: [ ... ].
 let ch: Channel<<Int>>.
 ch := Channel new: 10.
 Task spawn: [ ch <- 42 ] name: 'sender'.
-Task spawn: [ | v: Int | v := <-ch. Console println: v printString ] name: 'receiver'.
+Task spawn: [
+    let v: Int.
+    v := <-ch.
+    Console println: v printString
+] name: 'receiver'.
 ```
 
 ## Error Handling
