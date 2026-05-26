@@ -47,7 +47,7 @@ type UpvalueRef struct {
 	Closed    bool           // true once the enclosing scope has exited
 	StackSlot int            // stack slot index (when open)
 	VM        *VM            // reference to VM for stack access (when open)
-	TypeName  string
+	TypeName  string         // declared type of the captured variable for assignment checks
 }
 
 // NewVM creates a new VM with default globals.
