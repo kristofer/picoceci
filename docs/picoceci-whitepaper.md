@@ -75,7 +75,7 @@ Here's what Smalltalk syntax looks like in picoceci:
 Console println: 'Hello from orbit!'.
 
 "Ask a temperature sensor for its reading"
-| temp |
+let temp: Float.
 temp := cabin temperatureSensor reading.
 Console println: 'Cabin temp: ', temp printString, ' C'.
 ```
@@ -108,7 +108,8 @@ picoceci does the same thing, but with objects (instead of `structs`) and the `c
 
 ```picoceci
 object Sensor {
-    | name lastReading |
+    let name: String.
+    let lastReading Float.
     init: aName [ name := aName. lastReading := nil ]
     name        [ ^name ]
     reading     [ ^lastReading ]
@@ -118,7 +119,8 @@ object Sensor {
 
 object AlertingSensor {
     compose Sensor.
-    | threshold alertChannel |
+    let threshold: Float.
+    let alertChannel: Channel<<Bool>>.
     init: aName threshold: t channel: ch [
         super init: aName.
         threshold := t.
@@ -155,7 +157,8 @@ Any object that responds to `reading` and `update:` satisfies `TemperatureSensor
 Go's channels are one of its most celebrated features — a clean, safe way for concurrent routines to communicate without shared memory. picoceci has channels too:
 
 ```picoceci
-| readings alertChan |
+let readings: Channel.
+let alertChan: Channel.
 readings  := Channel new: 20.
 alertChan := Channel new: 5.
 
@@ -199,7 +202,7 @@ The number `42`? It's an object. Send it messages:
 The block `[ :x | x * 2 ]`? An object. Store it, pass it around, invoke it later:
 
 ```picoceci
-| doubler |
+let doubler: Block.
 doubler := [ :x | x * 2 ].
 Console println: (doubler value: 21) printString.  "=> 42"
 ```
@@ -207,7 +210,7 @@ Console println: (doubler value: 21) printString.  "=> 42"
 `true` and `false`? Objects:
 
 ```picoceci
-| sensor |
+let sensor: Bool.
 sensor sensorOK
     ifTrue:  [ Console println: 'Sensor nominal' ]
     ifFalse: [ Console println: 'Sensor fault — check connections' ].
@@ -230,7 +233,7 @@ The simplest node: read a temperature sensor and print it to the serial console.
 
 ```picoceci
 "temperature_hello.pc — the 'Hello World' of sensor programming"
-| temp |
+let temp: I2C.
 temp := I2C new: 0 sda: 21 scl: 22 speed: 400000.
 [ true ] whileTrue: [
     | reading |
@@ -266,7 +269,8 @@ object TempSensor {
     printString [ ^'TempSensor(' , lastC printString , 'C)' ]
 }
 
-| i2c sensor |
+let i2c: I2C.
+let sensor: TempSensor.
 i2c    := I2C new: 0 sda: 21 scl: 22 speed: 400000.
 sensor := TempSensor new init: i2c address: 16r48.
 
@@ -289,13 +293,14 @@ import 'TempSensor'.
 import 'HumiditySensor'.
 import 'CO2Sensor'.
 
-| reportChan i2c |
+let reportChan: Channel.
+let i2c: I2C.
 reportChan := Channel new: 30.
 i2c := I2C new: 0 sda: 21 scl: 22 speed: 400000.
 
 "Temperature task"
 Task spawn: [
-    | s |
+    let s: tempSensor.
     s := TempSensor new init: i2c address: 16r48.
     [ true ] whileTrue: [
         s poll.
@@ -306,7 +311,7 @@ Task spawn: [
 
 "Humidity task"
 Task spawn: [
-    | s |
+    let s: HumiditySensor.
     s := HumiditySensor new init: i2c address: 16r44.
     [ true ] whileTrue: [
         s poll.
@@ -317,7 +322,7 @@ Task spawn: [
 
 "CO₂ task"
 Task spawn: [
-    | s |
+    let s: CO2Sensor.
     s := CO2Sensor new init: i2c address: 16r62.
     [ true ] whileTrue: [
         s poll.
@@ -350,7 +355,8 @@ import 'TempSensor'.
 
 object AlertingTempSensor {
     compose TempSensor.
-    | alertThreshold alertChan |
+    let alertThreshold: Float.
+    let alertChan: Channel.
     init: aBus address: anAddr threshold: t channel: ch [
         super init: aBus address: anAddr.
         alertThreshold := t.
@@ -378,12 +384,12 @@ A spacecraft cannot afford to have a sensor node crash and stay crashed. picocec
 "WatchdogSensor.pc — restart a sensor task if it crashes"
 import 'TempSensor'.
 
-| i2c |
+let i2c: I2C.
 i2c := I2C new: 0 sda: 21 scl: 22 speed: 400000.
 
 [ true ] whileTrue: [
     [
-        | sensor |
+        let sensor: TempSensor.
         sensor := TempSensor new init: i2c address: 16r48.
         [ true ] whileTrue: [
             sensor poll.
@@ -422,7 +428,10 @@ readings := Dictionary new.
 
 Task spawn: [
     [ true ] whileTrue: [
-        | msg nodeId sensorType value |
+        let msg: Channel.
+        let nodeId: String.
+        let sensorType: Any.
+        let value: Float.
         msg        := <-incoming.
         nodeId     := msg at: #node.
         sensorType := msg at: #sensor.
@@ -443,7 +452,10 @@ The node sending data looks like this:
 import 'TempSensor'.
 import 'NetworkChannel'.
 
-| i2c sensor outgoing nodeId |
+let i2c: I2C.
+let sensor: Sensor.
+let outgoing: Channel.
+let nodeId: String.
 nodeId  := 'node-A7'.
 i2c     := I2C new: 0 sda: 21 scl: 22 speed: 400000.
 sensor  := TempSensor new init: i2c address: 16r48.
@@ -557,12 +569,12 @@ Then try:
 
 ```picoceci
 object Counter {
-    | count |
+    let count: Int.
     init  [ count := 0 ]
     inc   [ count := count + 1. ^self ]
     value [ ^count ]
 }
-| c |
+let c: Counter.
 c := Counter new.
 c inc; inc; inc.
 Console println: c value printString.
@@ -608,7 +620,9 @@ true false nil
 ### Variables and Assignment
 
 ```picoceci
-| x y z |          "declare locals"
+let x: Int.
+let y: Any.
+let z: Any.        "declare locals"
 x := 42.           "assignment"
 ```
 
@@ -626,7 +640,8 @@ led toggle; blink; off.     "cascade (same receiver)"
 
 ```picoceci
 object Foo {
-    | slot1 slot2 |
+    let slot1: Any.
+    let slot2: Any.
     init: a and: b [ slot1 := a. slot2 := b ]
     sum            [ ^slot1 + slot2 ]
 }
@@ -671,12 +686,12 @@ x > 0 ifTrue: [ ... ] ifFalse: [ ... ].
 ### Concurrency
 
 ```picoceci
-| ch |
+let ch: Channel.
 ch := Channel new: 10.
 
 Task spawn: [ ch <- 42 ] name: 'sender'.
 Task spawn: [
-    | v |
+    let v: Int.
     v := <-ch.
     Console println: v printString
 ] name: 'receiver'.
@@ -700,7 +715,8 @@ Task spawn: [
 
 ```picoceci
 "A task that polls a sensor and publishes to a channel."
-| sensor ch |
+let sensor: TempSensor.
+let ch: Channel.
 sensor := TempSensor new init: i2c address: 16r48.
 ch := Channel new: 10.
 
@@ -719,7 +735,7 @@ Task spawn: [
 "A task that monitors a channel and raises alerts."
 Task spawn: [
     [ true ] whileTrue: [
-        | v |
+        let v: Float.
         v := <-ch.
         v > 28.0 ifTrue: [
             alertChan <- ('HIGH TEMP: ' , v printString , 'C')
@@ -744,7 +760,8 @@ Task spawn: [
 
 ```picoceci
 "Compose readings from multiple sensors into one report."
-| sensors reportChan |
+let sensors: Array.
+let reportChan: Channel.
 sensors := Array
     with: (TempSensor new init: i2c address: 16r48)
     with: (HumiditySensor new init: i2c address: 16r44).
