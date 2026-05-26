@@ -752,7 +752,7 @@ Sending a value of the wrong type raises a `TypeError` at the point of send, bef
 Each heap-allocated object is a contiguous block:
 
 ```
-[ header: 4B | refcount or GC mark: 4B let kind: 2B. slot-count: 2B | slots... ]
+[ header: 4B | refcount or GC mark: 4B | kind: 2B | slot-count: 2B | slots... ]
 ```
 
 ### 11.2 Allocation strategy

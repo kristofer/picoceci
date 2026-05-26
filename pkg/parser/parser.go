@@ -130,12 +130,9 @@ func (p *Parser) parseObjectDecl() *ast.ObjectDecl {
 			}
 			p.consumeOptional(lexer.DOT)
 		default:
-			before := p.cur
 			m := p.parseMethodDef()
 			if m != nil {
 				n.Methods = append(n.Methods, m)
-			} else if p.cur == before {
-				p.advance()
 			}
 		}
 	}
@@ -167,7 +164,8 @@ func (p *Parser) parseMethodDef() *ast.MethodDef {
 			}
 		}
 	default:
-		p.errorf("expected method selector, got %s", p.cur.Literal)
+		p.errorf("expected method selector in object or method context, got %s; skipping token for recovery", p.cur.Literal)
+		p.advance()
 		return nil
 	}
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-var legacyTypedDeclRE = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_]*\s*:\s*[A-Za-z_][^\s|]*`)
+var legacyTypedDeclRE = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_]*\s*:\s*[A-Za-z_][A-Za-z0-9_<>]*`)
 
 func TestRepositorySourcesUseV3LetDeclarations(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
