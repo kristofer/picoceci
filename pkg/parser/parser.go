@@ -164,7 +164,7 @@ func (p *Parser) parseMethodDef() *ast.MethodDef {
 			}
 		}
 	default:
-		p.errorf("expected method selector in object or method context, got %s; skipping token for recovery", p.cur.Literal)
+		p.errorf("expected method selector in object body, got %s; skipping token for recovery", p.cur.Literal)
 		p.advance()
 		return nil
 	}
