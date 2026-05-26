@@ -196,6 +196,40 @@ func TestParser_VarDecl(t *testing.T) {
 	}
 }
 
+func TestParser_LetDeclTyped(t *testing.T) {
+	prog := parse(t, "let x: Queue<<Int>>.")
+	decl, ok := prog.Statements[0].(*ast.LetDecl)
+	if !ok {
+		t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[0])
+	}
+	if decl.Name != "x" {
+		t.Fatalf("name: got %q, want %q", decl.Name, "x")
+	}
+	if decl.Type != "Queue<<Int>>" {
+		t.Fatalf("type: got %q, want %q", decl.Type, "Queue<<Int>>")
+	}
+	if decl.Value != nil {
+		t.Fatalf("expected typed let declaration to have nil value, got %T", decl.Value)
+	}
+}
+
+func TestParser_LetDeclInferred(t *testing.T) {
+	prog := parse(t, "let retries := 3.")
+	decl, ok := prog.Statements[0].(*ast.LetDecl)
+	if !ok {
+		t.Fatalf("expected *ast.LetDecl, got %T", prog.Statements[0])
+	}
+	if decl.Name != "retries" {
+		t.Fatalf("name: got %q, want %q", decl.Name, "retries")
+	}
+	if decl.Type != "" {
+		t.Fatalf("type: got %q, want empty type for inferred let", decl.Type)
+	}
+	if _, ok := decl.Value.(*ast.IntLit); !ok {
+		t.Fatalf("expected inferred let value to be *ast.IntLit, got %T", decl.Value)
+	}
+}
+
 func TestParser_VarDecl_BareIdentifierError(t *testing.T) {
 	l := lexer.NewString("| x |")
 	p := parser.New(l)

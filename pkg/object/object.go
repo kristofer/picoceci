@@ -14,33 +14,34 @@ import "fmt"
 type Kind uint8
 
 const (
-	KindNil       Kind = iota
-	KindBool           // true / false
-	KindSmallInt       // tagged integer
-	KindFloat          // IEEE-754 double
-	KindChar           // Unicode code point
-	KindString         // immutable UTF-8 string
-	KindSymbol         // interned string
-	KindByteArray      // mutable byte slice
-	KindArray          // heterogeneous array
-	KindBlock          // closure
-	KindObject         // user-defined object
-	KindNativeFunc     // Go-implemented callable
+	KindNil        Kind = iota
+	KindBool            // true / false
+	KindSmallInt        // tagged integer
+	KindFloat           // IEEE-754 double
+	KindChar            // Unicode code point
+	KindString          // immutable UTF-8 string
+	KindSymbol          // interned string
+	KindByteArray       // mutable byte slice
+	KindArray           // heterogeneous array
+	KindBlock           // closure
+	KindObject          // user-defined object
+	KindNativeFunc      // Go-implemented callable
 )
 
 // MethodDef holds the definition of a picoceci method.
 type MethodDef struct {
 	Selector   string
-	Params     []string // parameter names
-	Locals     []string // local variable names (parallel with LocalTypes)
-	LocalTypes []string // declared type for each local; "Any" = dynamic
-	Body       interface{} // []ast.Node (to avoid import cycle; cast by eval)
+	Params     []string                                            // parameter names
+	Locals     []string                                            // local variable names (parallel with LocalTypes)
+	LocalTypes []string                                            // declared type for each local; "Any" = dynamic
+	Body       interface{}                                         // []ast.Node (to avoid import cycle; cast by eval)
 	Native     func(self *Object, args []*Object) (*Object, error) // for built-ins
 }
 
 // Object is the universal value container for the picoceci runtime.
 type Object struct {
-	Kind Kind
+	Kind     Kind
+	TypeName string
 
 	// Primitive value storage (only one is populated at a time).
 	IVal int64   // KindSmallInt
@@ -50,20 +51,20 @@ type Object struct {
 	SVal string  // KindString, KindSymbol
 
 	// Collection storage.
-	Bytes   []byte    // KindByteArray
-	Items   []*Object // KindArray
+	Bytes []byte    // KindByteArray
+	Items []*Object // KindArray
 
 	// Object / block storage.
-	Slots           map[string]*Object   // instance variable slots
-	SlotTypes       map[string]string    // declared type for each slot (factory/instance)
+	Slots           map[string]*Object // instance variable slots
+	SlotTypes       map[string]string  // declared type for each slot (factory/instance)
 	Methods         map[string]*MethodDef
 	ComposedMethods map[string]*MethodDef // composed-object methods for super dispatch
 	Env             interface{}           // *eval.Env — set by eval package (avoid import cycle)
 
 	// Block-specific.
 	Params     []string
-	Locals     []string // local variable names (parallel with LocalTypes)
-	LocalTypes []string // declared type for each local; "Any" = dynamic
+	Locals     []string    // local variable names (parallel with LocalTypes)
+	LocalTypes []string    // declared type for each local; "Any" = dynamic
 	Body       interface{} // []ast.Node
 
 	// Reference count (used by the memory package).
@@ -140,10 +141,10 @@ func NewObject(methods map[string]*MethodDef) *Object {
 
 // --- Type tests -------------------------------------------------------------
 
-func (o *Object) IsNil() bool   { return o == nil || o.Kind == KindNil }
-func (o *Object) IsBool() bool  { return o.Kind == KindBool }
-func (o *Object) IsInt() bool   { return o.Kind == KindSmallInt }
-func (o *Object) IsFloat() bool { return o.Kind == KindFloat }
+func (o *Object) IsNil() bool    { return o == nil || o.Kind == KindNil }
+func (o *Object) IsBool() bool   { return o.Kind == KindBool }
+func (o *Object) IsInt() bool    { return o.Kind == KindSmallInt }
+func (o *Object) IsFloat() bool  { return o.Kind == KindFloat }
 func (o *Object) IsString() bool { return o.Kind == KindString }
 func (o *Object) IsSymbol() bool { return o.Kind == KindSymbol }
 

@@ -316,9 +316,10 @@ func runSessionREPL(r io.Reader, w io.Writer, loader *module.Loader, wifiMgr *pi
 // This mirrors the desktop cmd/picoceci/main.go pattern and ensures that
 // globals like LED, Wifi, Task, etc. are initialised exactly once per session.
 type vmState struct {
-	globals map[string]*object.Object
-	blocks  []*bytecode.CompiledBlock
-	loader  *module.Loader
+	globals     map[string]*object.Object
+	globalTypes map[string]string
+	blocks      []*bytecode.CompiledBlock
+	loader      *module.Loader
 }
 
 // newVMState initialises a vmState with fully-wired sinks.  It calls
@@ -332,9 +333,10 @@ func newVMState(w io.Writer, loader *module.Loader, wifiMgr *picnet.Manager, led
 		LEDDriver:        led,
 	})
 	return &vmState{
-		globals: vm.Globals(),
-		blocks:  make([]*bytecode.CompiledBlock, 0),
-		loader:  loader,
+		globals:     vm.Globals(),
+		globalTypes: vm.GlobalTypes(),
+		blocks:      make([]*bytecode.CompiledBlock, 0),
+		loader:      loader,
 	}
 }
 
@@ -356,6 +358,7 @@ func execSource(w io.Writer, src string, state *vmState) {
 	c := bytecode.NewCompilerWithLoader(state.loader)
 	c.SetBlocks(state.blocks)
 	c.SetTopLevelVarsAreGlobals(true)
+	c.SeedGlobals(state.globals, state.globalTypes)
 	chunk, err := c.Compile(prog.Statements)
 	if err != nil {
 		writeStr(w, "compile: "+err.Error()+"\n")
@@ -366,6 +369,8 @@ func execSource(w io.Writer, src string, state *vmState) {
 	vm := bytecode.NewVMWithGlobals(state.globals)
 	vm.SetBlocks(c.GetBlocks())
 	vm.AddGlobals(c.GetGlobals())
+	vm.AddGlobalTypes(state.globalTypes)
+	vm.AddGlobalTypes(c.GetGlobalTypes())
 	result, err := vm.Run(chunk)
 	if err != nil {
 		writeStr(w, "error: "+err.Error()+"\n")
@@ -375,6 +380,9 @@ func execSource(w io.Writer, src string, state *vmState) {
 	// Persist updated globals and blocks for next call.
 	for name, val := range vm.Globals() {
 		state.globals[name] = val
+	}
+	for name, typeName := range vm.GlobalTypes() {
+		state.globalTypes[name] = typeName
 	}
 	state.blocks = c.GetBlocks()
 

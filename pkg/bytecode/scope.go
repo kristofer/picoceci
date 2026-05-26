@@ -11,6 +11,7 @@ type scope struct {
 // local represents a local variable in a scope.
 type local struct {
 	name     string
+	typeName string
 	depth    int  // scope depth where declared
 	captured bool // true if captured by a nested block
 }
@@ -31,10 +32,11 @@ func newScope(enclosing *scope) *scope {
 
 // declareLocal adds a local variable to the current scope.
 // Returns the slot index.
-func (s *scope) declareLocal(name string) int {
+func (s *scope) declareLocal(name, typeName string) int {
 	s.locals = append(s.locals, local{
-		name:  name,
-		depth: s.depth,
+		name:     name,
+		typeName: typeName,
+		depth:    s.depth,
 	})
 	return len(s.locals) - 1
 }
@@ -87,4 +89,12 @@ func (s *scope) addUpvalue(index uint8, isLocal bool) int {
 // localCount returns the number of local variables in this scope.
 func (s *scope) localCount() int {
 	return len(s.locals)
+}
+
+func (s *scope) localTypes() []string {
+	types := make([]string, len(s.locals))
+	for i, local := range s.locals {
+		types[i] = local.typeName
+	}
+	return types
 }

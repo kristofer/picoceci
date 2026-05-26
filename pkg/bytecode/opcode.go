@@ -21,14 +21,18 @@ const (
 	OpPushConst // push constant from pool (next 2 bytes = index)
 
 	// Variables
-	OpPushLocal    // push local[arg] (next 1 byte = slot)
-	OpStoreLocal   // TOS → local[arg], pop (next 1 byte = slot)
-	OpPushUpvalue  // push upvalue[arg] (next 1 byte = index)
-	OpStoreUpvalue // TOS → upvalue[arg], pop (next 1 byte = index)
-	OpPushInst     // push self.slots[arg] (next 2 bytes = name index)
-	OpStoreInst    // TOS → self.slots[arg], pop (next 2 bytes = name index)
-	OpPushGlobal   // push global[arg] (next 2 bytes = name index)
-	OpStoreGlobal  // TOS → global[arg], pop (next 2 bytes = name index)
+	OpPushLocal       // push local[arg] (next 1 byte = slot)
+	OpStoreLocal      // TOS → local[arg], pop (next 1 byte = slot)
+	OpPushUpvalue     // push upvalue[arg] (next 1 byte = index)
+	OpStoreUpvalue    // TOS → upvalue[arg], pop (next 1 byte = index)
+	OpPushInst        // push self.slots[arg] (next 2 bytes = name index)
+	OpStoreInst       // TOS → self.slots[arg], pop (next 2 bytes = name index)
+	OpPushGlobal      // push global[arg] (next 2 bytes = name index)
+	OpStoreGlobal     // TOS → global[arg], pop (next 2 bytes = name index)
+	OpSetLocalType    // set local declared type (next 1 byte = slot, next 2 bytes = type const index)
+	OpInferLocalType  // infer local declared type from TOS (next 1 byte = slot)
+	OpSetGlobalType   // set global declared type (next 2 bytes = name const index, next 2 bytes = type const index)
+	OpInferGlobalType // infer global declared type from TOS (next 2 bytes = name const index)
 
 	// Message sends
 	OpSend      // send message (next: 2 bytes selector idx, 1 byte argc)
@@ -53,32 +57,36 @@ const (
 
 // opCodeNames maps opcodes to their string names.
 var opCodeNames = [...]string{
-	OpPop:          "POP",
-	OpDup:          "DUP",
-	OpPushNil:      "PUSH_NIL",
-	OpPushTrue:     "PUSH_TRUE",
-	OpPushFalse:    "PUSH_FALSE",
-	OpPushSelf:     "PUSH_SELF",
-	OpPushInt:      "PUSH_INT",
-	OpPushConst:    "PUSH_CONST",
-	OpPushLocal:    "PUSH_LOCAL",
-	OpStoreLocal:   "STORE_LOCAL",
-	OpPushUpvalue:  "PUSH_UPVALUE",
-	OpStoreUpvalue: "STORE_UPVALUE",
-	OpPushInst:     "PUSH_INST",
-	OpStoreInst:    "STORE_INST",
-	OpPushGlobal:   "PUSH_GLOBAL",
-	OpStoreGlobal:  "STORE_GLOBAL",
-	OpSend:         "SEND",
-	OpSuperSend:    "SUPER_SEND",
-	OpClosure:      "CLOSURE",
-	OpJump:         "JUMP",
-	OpJumpIfFalse:  "JUMP_IF_FALSE",
-	OpJumpIfTrue:   "JUMP_IF_TRUE",
-	OpReturn:       "RETURN",
-	OpReturnSelf:   "RETURN_SELF",
-	OpBlockReturn:  "BLOCK_RETURN",
-	OpMakeArray:    "MAKE_ARRAY",
+	OpPop:             "POP",
+	OpDup:             "DUP",
+	OpPushNil:         "PUSH_NIL",
+	OpPushTrue:        "PUSH_TRUE",
+	OpPushFalse:       "PUSH_FALSE",
+	OpPushSelf:        "PUSH_SELF",
+	OpPushInt:         "PUSH_INT",
+	OpPushConst:       "PUSH_CONST",
+	OpPushLocal:       "PUSH_LOCAL",
+	OpStoreLocal:      "STORE_LOCAL",
+	OpPushUpvalue:     "PUSH_UPVALUE",
+	OpStoreUpvalue:    "STORE_UPVALUE",
+	OpPushInst:        "PUSH_INST",
+	OpStoreInst:       "STORE_INST",
+	OpPushGlobal:      "PUSH_GLOBAL",
+	OpStoreGlobal:     "STORE_GLOBAL",
+	OpSetLocalType:    "SET_LOCAL_TYPE",
+	OpInferLocalType:  "INFER_LOCAL_TYPE",
+	OpSetGlobalType:   "SET_GLOBAL_TYPE",
+	OpInferGlobalType: "INFER_GLOBAL_TYPE",
+	OpSend:            "SEND",
+	OpSuperSend:       "SUPER_SEND",
+	OpClosure:         "CLOSURE",
+	OpJump:            "JUMP",
+	OpJumpIfFalse:     "JUMP_IF_FALSE",
+	OpJumpIfTrue:      "JUMP_IF_TRUE",
+	OpReturn:          "RETURN",
+	OpReturnSelf:      "RETURN_SELF",
+	OpBlockReturn:     "BLOCK_RETURN",
+	OpMakeArray:       "MAKE_ARRAY",
 }
 
 // String returns the human-readable name of an opcode.
@@ -98,15 +106,21 @@ func (op OpCode) OperandWidths() []int {
 		OpReturn, OpReturnSelf, OpBlockReturn:
 		return nil // no operands
 
-	case OpPushLocal, OpStoreLocal, OpPushUpvalue, OpStoreUpvalue:
+	case OpPushLocal, OpStoreLocal, OpPushUpvalue, OpStoreUpvalue, OpInferLocalType:
 		return []int{1} // 1-byte slot index
 
 	case OpPushConst, OpPushInst, OpStoreInst, OpPushGlobal, OpStoreGlobal,
-		OpClosure, OpJump, OpJumpIfFalse, OpJumpIfTrue, OpMakeArray:
+		OpInferGlobalType, OpClosure, OpJump, OpJumpIfFalse, OpJumpIfTrue, OpMakeArray:
 		return []int{2} // 2-byte index or offset
 
 	case OpPushInt:
 		return []int{4} // 4-byte immediate integer
+
+	case OpSetLocalType:
+		return []int{1, 2}
+
+	case OpSetGlobalType:
+		return []int{2, 2}
 
 	case OpSend, OpSuperSend:
 		return []int{2, 1} // 2-byte selector index, 1-byte argc

@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/kristofer/picoceci/pkg/ast"
+	"github.com/kristofer/picoceci/pkg/eval"
 	"github.com/kristofer/picoceci/pkg/object"
 )
 
@@ -28,18 +29,25 @@ type Compiler struct {
 	selfSlotNames []string // instance variable names when compiling a method
 
 	// Module loading support
-	moduleLoader    ModuleLoader               // optional module loader
-	globals         map[string]*object.Object  // accumulated globals from imports
+	moduleLoader    ModuleLoader              // optional module loader
+	globals         map[string]*object.Object // accumulated globals from imports
+	globalTypes     map[string]string
 	objectTemplates map[string]*ast.ObjectDecl // templates for compose support
 }
 
 // NewCompiler creates a new compiler.
 func NewCompiler() *Compiler {
+	globals := eval.InitialGlobals()
+	globalTypes := make(map[string]string, len(globals))
+	for name, val := range globals {
+		globalTypes[name] = inferDeclaredType(val)
+	}
 	return &Compiler{
 		chunk:           NewChunk(),
 		scope:           newScope(nil),
 		blocks:          make([]*CompiledBlock, 0),
-		globals:         make(map[string]*object.Object),
+		globals:         globals,
+		globalTypes:     globalTypes,
 		objectTemplates: make(map[string]*ast.ObjectDecl),
 	}
 }
@@ -65,6 +73,27 @@ func (c *Compiler) SetTopLevelVarsAreGlobals(enabled bool) {
 	c.topLevelVarsAreGlobals = enabled
 }
 
+// SeedGlobals makes existing globals visible to the compiler, which is needed
+// for incremental compilation where later inputs may assign to earlier
+// declarations.
+func (c *Compiler) SeedGlobals(globals map[string]*object.Object, globalTypes map[string]string) {
+	for name, val := range globals {
+		c.globals[name] = val
+		if globalTypes != nil {
+			if typeName, ok := globalTypes[name]; ok {
+				c.globalTypes[name] = typeName
+				continue
+			}
+		}
+		c.globalTypes[name] = inferDeclaredType(val)
+	}
+	for name, typeName := range globalTypes {
+		if _, ok := c.globalTypes[name]; !ok {
+			c.globalTypes[name] = typeName
+		}
+	}
+}
+
 // Compile compiles a program (list of statements) into a Chunk.
 func (c *Compiler) Compile(nodes []ast.Node) (*Chunk, error) {
 	for _, node := range nodes {
@@ -79,6 +108,8 @@ func (c *Compiler) Compile(nodes []ast.Node) (*Chunk, error) {
 		c.emitOp(OpPushNil, 1)
 	}
 
+	c.chunk.LocalCount = c.scope.localCount()
+	c.chunk.LocalTypes = c.scope.localTypes()
 	c.emitOp(OpReturn, 1)
 	return c.chunk, nil
 }
@@ -88,6 +119,8 @@ func (c *Compiler) CompileExpression(node ast.Node) (*Chunk, error) {
 	if err := c.compileNode(node); err != nil {
 		return nil, err
 	}
+	c.chunk.LocalCount = c.scope.localCount()
+	c.chunk.LocalTypes = c.scope.localTypes()
 	c.emitOp(OpReturn, lineOf(node))
 	return c.chunk, nil
 }
@@ -133,6 +166,8 @@ func (c *Compiler) compileNode(node ast.Node) error {
 		return c.compileBlock(n)
 	case *ast.VarDecl:
 		return c.compileVarDecl(n)
+	case *ast.LetDecl:
+		return c.compileLetDecl(n)
 	case *ast.Assign:
 		return c.compileAssign(n)
 	case *ast.Return:
@@ -306,21 +341,29 @@ func (c *Compiler) compileIdent(n *ast.Ident) error {
 func (c *Compiler) compileBlock(n *ast.Block) error {
 	// Create a new compiler for the block with nested scope
 	blockCompiler := &Compiler{
-		chunk:         NewChunk(),
-		scope:         newScope(c.scope),
-		blocks:        c.blocks,
-		isMethod:      c.isMethod,
-		selfSlotNames: c.selfSlotNames,
+		chunk:           NewChunk(),
+		scope:           newScope(c.scope),
+		blocks:          c.blocks,
+		isMethod:        c.isMethod,
+		selfSlotNames:   c.selfSlotNames,
+		moduleLoader:    c.moduleLoader,
+		globals:         c.globals,
+		globalTypes:     c.globalTypes,
+		objectTemplates: c.objectTemplates,
 	}
 
 	// Declare parameters as locals
 	for _, param := range n.Params {
-		blockCompiler.scope.declareLocal(param)
+		blockCompiler.scope.declareLocal(param, "Any")
 	}
 
 	// Declare local variables
-	for _, local := range n.Locals {
-		blockCompiler.scope.declareLocal(local)
+	for i, local := range n.Locals {
+		typeName := "Any"
+		if i < len(n.LocalTypes) {
+			typeName = n.LocalTypes[i]
+		}
+		blockCompiler.scope.declareLocal(local, typeName)
 	}
 
 	// Compile block body
@@ -348,6 +391,7 @@ func (c *Compiler) compileBlock(n *ast.Block) error {
 	compiledBlock := &CompiledBlock{
 		Arity:      len(n.Params),
 		LocalCount: blockCompiler.scope.localCount(),
+		LocalTypes: blockCompiler.scope.localTypes(),
 		Upvalues:   blockCompiler.scope.upvalues,
 		Chunk:      blockCompiler.chunk,
 		Name:       fmt.Sprintf("block@L%d", n.Pos.Line),
@@ -374,22 +418,69 @@ func (c *Compiler) compileBlock(n *ast.Block) error {
 }
 
 func (c *Compiler) compileVarDecl(n *ast.VarDecl) error {
-	if c.topLevelVarsAreGlobals && c.scope.depth == 0 && !c.isMethod {
-		for i, name := range n.Names {
-			typeName := "Any"
-			if i < len(n.Types) {
-				typeName = n.Types[i]
-			}
-			if _, exists := c.globals[name]; !exists {
-				c.globals[name] = zeroValueFor(typeName)
-			}
+	for i, name := range n.Names {
+		typeName := "Any"
+		if i < len(n.Types) {
+			typeName = n.Types[i]
 		}
+		if c.topLevelVarsAreGlobals && c.scope.depth == 0 && !c.isMethod {
+			if err := c.emitGlobalDeclaration(name, typeName, n.Pos.Line); err != nil {
+				return err
+			}
+			continue
+		}
+		slot := c.scope.declareLocal(name, typeName)
+		if err := c.emitLocalDeclaration(slot, typeName, n.Pos.Line); err != nil {
+			return err
+		}
+	}
+	c.emitOp(OpPushNil, n.Pos.Line)
+	return nil
+}
+
+func (c *Compiler) compileLetDecl(n *ast.LetDecl) error {
+	if n.Value == nil {
+		if c.topLevelVarsAreGlobals && c.scope.depth == 0 && !c.isMethod {
+			if err := c.emitGlobalDeclaration(n.Name, n.Type, n.Pos.Line); err != nil {
+				return err
+			}
+			c.emitOp(OpPushNil, n.Pos.Line)
+			return nil
+		}
+		slot := c.scope.declareLocal(n.Name, n.Type)
+		if err := c.emitLocalDeclaration(slot, n.Type, n.Pos.Line); err != nil {
+			return err
+		}
+		c.emitOp(OpPushNil, n.Pos.Line)
 		return nil
 	}
 
-	for _, name := range n.Names {
-		c.scope.declareLocal(name)
+	if c.topLevelVarsAreGlobals && c.scope.depth == 0 && !c.isMethod {
+		c.globalTypes[n.Name] = "Any"
+		if err := c.compileNode(n.Value); err != nil {
+			return err
+		}
+		nameIdx, err := c.stringConstantIndex(n.Name)
+		if err != nil {
+			return err
+		}
+		c.emitOp(OpInferGlobalType, n.Pos.Line)
+		c.chunk.WriteUint16(uint16(nameIdx), n.Pos.Line)
+		c.emitOp(OpStoreGlobal, n.Pos.Line)
+		c.chunk.WriteUint16(uint16(nameIdx), n.Pos.Line)
+		c.emitOp(OpPushNil, n.Pos.Line)
+		return nil
 	}
+
+	slot := c.scope.declareLocal(n.Name, "Any")
+	if err := c.compileNode(n.Value); err != nil {
+		return err
+	}
+	c.emitOp(OpInferLocalType, n.Pos.Line)
+	c.chunk.Write(byte(slot), n.Pos.Line)
+	c.emitOp(OpStoreLocal, n.Pos.Line)
+	c.chunk.Write(byte(slot), n.Pos.Line)
+	c.emitOp(OpPushNil, n.Pos.Line)
 	return nil
 }
 
@@ -431,12 +522,88 @@ func (c *Compiler) compileAssign(n *ast.Assign) error {
 	}
 
 	// Global
+	if _, ok := c.globalTypes[n.Name]; !ok {
+		return fmt.Errorf("assignment to undeclared variable %q", n.Name)
+	}
 	idx := c.chunk.AddConstant(object.StringObject(n.Name))
 	if idx < 0 {
 		return fmt.Errorf("constant pool overflow")
 	}
 	c.emitOp(OpStoreGlobal, n.Pos.Line)
 	c.chunk.WriteUint16(uint16(idx), n.Pos.Line)
+	return nil
+}
+
+func (c *Compiler) emitLocalDeclaration(slot int, typeName string, line int) error {
+	typeIdx, err := c.stringConstantIndex(typeName)
+	if err != nil {
+		return err
+	}
+	c.emitOp(OpSetLocalType, line)
+	c.chunk.Write(byte(slot), line)
+	c.chunk.WriteUint16(uint16(typeIdx), line)
+	if err := c.emitObject(zeroValueFor(typeName), line); err != nil {
+		return err
+	}
+	c.emitOp(OpStoreLocal, line)
+	c.chunk.Write(byte(slot), line)
+	return nil
+}
+
+func (c *Compiler) emitGlobalDeclaration(name, typeName string, line int) error {
+	nameIdx, err := c.stringConstantIndex(name)
+	if err != nil {
+		return err
+	}
+	typeIdx, err := c.stringConstantIndex(typeName)
+	if err != nil {
+		return err
+	}
+	c.globalTypes[name] = typeName
+	c.emitOp(OpSetGlobalType, line)
+	c.chunk.WriteUint16(uint16(nameIdx), line)
+	c.chunk.WriteUint16(uint16(typeIdx), line)
+	if err := c.emitObject(zeroValueFor(typeName), line); err != nil {
+		return err
+	}
+	c.emitOp(OpStoreGlobal, line)
+	c.chunk.WriteUint16(uint16(nameIdx), line)
+	return nil
+}
+
+func (c *Compiler) stringConstantIndex(value string) (int, error) {
+	idx := c.chunk.AddConstant(object.StringObject(value))
+	if idx < 0 {
+		return -1, fmt.Errorf("constant pool overflow")
+	}
+	return idx, nil
+}
+
+func (c *Compiler) emitObject(obj *object.Object, line int) error {
+	if obj == nil || obj.Kind == object.KindNil {
+		c.emitOp(OpPushNil, line)
+		return nil
+	}
+	switch obj.Kind {
+	case object.KindBool:
+		if obj.BVal {
+			c.emitOp(OpPushTrue, line)
+		} else {
+			c.emitOp(OpPushFalse, line)
+		}
+	case object.KindSmallInt:
+		c.emitOp(OpPushInt, line)
+		c.chunk.WriteInt32(int32(obj.IVal), line)
+	case object.KindFloat, object.KindString, object.KindChar, object.KindSymbol, object.KindByteArray, object.KindArray:
+		idx := c.chunk.AddConstant(obj)
+		if idx < 0 {
+			return fmt.Errorf("constant pool overflow")
+		}
+		c.emitOp(OpPushConst, line)
+		c.chunk.WriteUint16(uint16(idx), line)
+	default:
+		c.emitOp(OpPushNil, line)
+	}
 	return nil
 }
 
@@ -695,6 +862,7 @@ func (c *Compiler) compileObjectDecl(decl *ast.ObjectDecl) error {
 
 	factory := &object.Object{
 		Kind:            object.KindObject,
+		TypeName:        decl.Name,
 		Slots:           make(map[string]*object.Object),
 		SlotTypes:       allSlotTypes,
 		Methods:         make(map[string]*object.MethodDef),
@@ -707,7 +875,7 @@ func (c *Compiler) compileObjectDecl(decl *ast.ObjectDecl) error {
 
 	for _, mdef := range decl.Methods {
 		mdef := mdef
-		compiled, err := c.CompileMethod(mdef, allSlots)
+		compiled, err := c.CompileMethod(mdef, allSlots, allSlotTypes)
 		if err != nil {
 			return fmt.Errorf("compile method %s>>%s: %w", decl.Name, mdef.Selector, err)
 		}
@@ -726,6 +894,7 @@ func (c *Compiler) compileObjectDecl(decl *ast.ObjectDecl) error {
 		Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
 			inst := &object.Object{
 				Kind:            object.KindObject,
+				TypeName:        self.TypeName,
 				Slots:           make(map[string]*object.Object),
 				SlotTypes:       self.SlotTypes,
 				Methods:         self.Methods,
@@ -745,6 +914,7 @@ func (c *Compiler) compileObjectDecl(decl *ast.ObjectDecl) error {
 	}
 
 	c.globals[decl.Name] = factory
+	c.globalTypes[decl.Name] = decl.Name
 	return nil
 }
 
@@ -780,26 +950,112 @@ func zeroValueFor(typeName string) *object.Object {
 	}
 }
 
+func typeMatches(typeName string, val *object.Object) bool {
+	if val == nil {
+		val = object.Nil
+	}
+	switch typeName {
+	case "", "Any":
+		return true
+	case "Int":
+		return val.Kind == object.KindSmallInt
+	case "Float":
+		return val.Kind == object.KindFloat
+	case "Bool":
+		return val.Kind == object.KindBool
+	case "String":
+		return val.Kind == object.KindString
+	case "Char":
+		return val.Kind == object.KindChar
+	case "Symbol":
+		return val.Kind == object.KindSymbol
+	case "ByteArray":
+		return val.Kind == object.KindByteArray
+	case "Array":
+		return val.Kind == object.KindArray
+	case "Block":
+		return val.Kind == object.KindBlock
+	case "Nil":
+		return val.Kind == object.KindNil
+	default:
+		if val.Kind == object.KindNil {
+			return true
+		}
+		if val.Kind != object.KindObject {
+			return false
+		}
+		if typeName == "Object" {
+			return true
+		}
+		return val.TypeName == "" || val.TypeName == typeName
+	}
+}
+
+func kindTypeName(val *object.Object) string {
+	if val == nil || val.Kind == object.KindNil {
+		return "Nil"
+	}
+	switch val.Kind {
+	case object.KindSmallInt:
+		return "Int"
+	case object.KindFloat:
+		return "Float"
+	case object.KindBool:
+		return "Bool"
+	case object.KindString:
+		return "String"
+	case object.KindChar:
+		return "Char"
+	case object.KindSymbol:
+		return "Symbol"
+	case object.KindByteArray:
+		return "ByteArray"
+	case object.KindArray:
+		return "Array"
+	case object.KindBlock:
+		return "Block"
+	case object.KindObject:
+		if val.TypeName != "" {
+			return val.TypeName
+		}
+		return "Object"
+	}
+	return "Unknown"
+}
+
+func inferDeclaredType(val *object.Object) string {
+	return kindTypeName(val)
+}
+
 // CompileMethod compiles a method definition.
-func (c *Compiler) CompileMethod(method *ast.MethodDef, slotNames []string) (*CompiledBlock, error) {
+func (c *Compiler) CompileMethod(method *ast.MethodDef, slotNames []string, slotTypes map[string]string) (*CompiledBlock, error) {
+	_ = slotTypes
 	methodCompiler := &Compiler{
-		chunk:         NewChunk(),
-		scope:         newScope(nil),
-		blocks:        c.blocks,
-		isMethod:      true,
-		selfSlotNames: slotNames,
+		chunk:           NewChunk(),
+		scope:           newScope(nil),
+		blocks:          c.blocks,
+		isMethod:        true,
+		selfSlotNames:   slotNames,
+		moduleLoader:    c.moduleLoader,
+		globals:         c.globals,
+		globalTypes:     c.globalTypes,
+		objectTemplates: c.objectTemplates,
 	}
 
 	// 'self' is implicitly available but not as a local
 
 	// Declare parameters as locals
 	for _, param := range method.Params {
-		methodCompiler.scope.declareLocal(param)
+		methodCompiler.scope.declareLocal(param, "Any")
 	}
 
 	// Declare local variables
-	for _, local := range method.Locals {
-		methodCompiler.scope.declareLocal(local)
+	for i, local := range method.Locals {
+		typeName := "Any"
+		if i < len(method.LocalTypes) {
+			typeName = method.LocalTypes[i]
+		}
+		methodCompiler.scope.declareLocal(local, typeName)
 	}
 
 	// Compile method body
@@ -822,6 +1078,7 @@ func (c *Compiler) CompileMethod(method *ast.MethodDef, slotNames []string) (*Co
 	compiled := &CompiledBlock{
 		Arity:      len(method.Params),
 		LocalCount: methodCompiler.scope.localCount(),
+		LocalTypes: methodCompiler.scope.localTypes(),
 		Upvalues:   nil, // Methods don't capture upvalues
 		Chunk:      methodCompiler.chunk,
 		Name:       method.Selector,
@@ -843,6 +1100,11 @@ func (c *Compiler) GetGlobals() map[string]*object.Object {
 	return c.globals
 }
 
+// GetGlobalTypes returns the compiler's view of declared global types.
+func (c *Compiler) GetGlobalTypes() map[string]string {
+	return c.globalTypes
+}
+
 // compileImport handles import declarations by loading the module
 // and merging its globals into the compiler's global namespace.
 func (c *Compiler) compileImport(n *ast.ImportDecl) error {
@@ -859,6 +1121,7 @@ func (c *Compiler) compileImport(n *ast.ImportDecl) error {
 	// Merge globals from the imported module
 	for name, obj := range globals {
 		c.globals[name] = obj
+		c.globalTypes[name] = inferDeclaredType(obj)
 	}
 
 	// Merge blocks from the imported module
@@ -902,6 +1165,8 @@ func lineOf(n ast.Node) int {
 	case *ast.Block:
 		return node.Pos.Line
 	case *ast.VarDecl:
+		return node.Pos.Line
+	case *ast.LetDecl:
 		return node.Pos.Line
 	case *ast.Assign:
 		return node.Pos.Line

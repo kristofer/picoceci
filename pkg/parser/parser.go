@@ -216,6 +216,9 @@ func (p *Parser) parseStatement() ast.Node {
 	if p.cur.Kind == lexer.CARET {
 		return p.parseReturn()
 	}
+	if p.cur.Kind == lexer.LET {
+		return p.parseLetDecl()
+	}
 	if p.cur.Kind == lexer.PIPE {
 		return p.parseVarDecl()
 	}
@@ -253,6 +256,36 @@ func (p *Parser) parseVarDecl() *ast.VarDecl {
 		n.Types = append(n.Types, typeName)
 	}
 	p.expect(lexer.PIPE)
+	return n
+}
+
+func (p *Parser) parseLetDecl() *ast.LetDecl {
+	n := &ast.LetDecl{Pos: pos(p.cur)}
+	p.expect(lexer.LET)
+
+	switch p.cur.Kind {
+	case lexer.KEYWORD:
+		n.Name = strings.TrimSuffix(p.cur.Literal, ":")
+		p.advance()
+		typeName, ok := p.parseTypeName()
+		if !ok && typeName == "" {
+			p.errorf("expected type name after %q:, got %q", n.Name, p.cur.Literal)
+			typeName = "Any"
+		}
+		n.Type = typeName
+	case lexer.IDENTIFIER:
+		n.Name = p.cur.Literal
+		p.advance()
+		if p.cur.Kind != lexer.ASSIGN {
+			p.errorf("expected := after let %q, got %q", n.Name, p.cur.Literal)
+			return n
+		}
+		p.advance()
+		n.Value = p.parseExpression()
+	default:
+		p.errorf("expected declaration name after let, got %q", p.cur.Literal)
+	}
+
 	return n
 }
 

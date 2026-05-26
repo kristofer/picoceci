@@ -29,7 +29,7 @@ type Program struct {
 	Statements []Node
 }
 
-func (n *Program) nodePos() Pos    { return n.Pos }
+func (n *Program) nodePos() Pos       { return n.Pos }
 func (n *Program) nodeString() string { return fmt.Sprintf("Program(%d stmts)", len(n.Statements)) }
 
 // ImportDecl represents:  import 'path'.
@@ -38,20 +38,20 @@ type ImportDecl struct {
 	Path string
 }
 
-func (n *ImportDecl) nodePos() Pos    { return n.Pos }
+func (n *ImportDecl) nodePos() Pos       { return n.Pos }
 func (n *ImportDecl) nodeString() string { return fmt.Sprintf("Import(%q)", n.Path) }
 
 // ObjectDecl represents:  object Name { ... }
 type ObjectDecl struct {
 	Pos       Pos
 	Name      string
-	Composes  []string     // names of composed objects
-	Slots     []string     // instance variable names (parallel with SlotTypes)
-	SlotTypes []string     // declared type for each slot; always populated; "Any" = dynamic
+	Composes  []string // names of composed objects
+	Slots     []string // instance variable names (parallel with SlotTypes)
+	SlotTypes []string // declared type for each slot; always populated; "Any" = dynamic
 	Methods   []*MethodDef
 }
 
-func (n *ObjectDecl) nodePos() Pos    { return n.Pos }
+func (n *ObjectDecl) nodePos() Pos       { return n.Pos }
 func (n *ObjectDecl) nodeString() string { return fmt.Sprintf("Object(%s)", n.Name) }
 
 // MethodDef is a method inside an object declaration.
@@ -64,7 +64,7 @@ type MethodDef struct {
 	Body       []Node
 }
 
-func (n *MethodDef) nodePos() Pos    { return n.Pos }
+func (n *MethodDef) nodePos() Pos       { return n.Pos }
 func (n *MethodDef) nodeString() string { return fmt.Sprintf("Method(%s)", n.Selector) }
 
 // InterfaceDecl represents:  interface Name { sigs... }
@@ -74,7 +74,7 @@ type InterfaceDecl struct {
 	Sigs []string // method selectors
 }
 
-func (n *InterfaceDecl) nodePos() Pos    { return n.Pos }
+func (n *InterfaceDecl) nodePos() Pos       { return n.Pos }
 func (n *InterfaceDecl) nodeString() string { return fmt.Sprintf("Interface(%s)", n.Name) }
 
 // --- Statements -------------------------------------------------------------
@@ -86,8 +86,19 @@ type VarDecl struct {
 	Types []string // declared type for each name; always populated; "Any" = dynamic
 }
 
-func (n *VarDecl) nodePos() Pos    { return n.Pos }
+func (n *VarDecl) nodePos() Pos       { return n.Pos }
 func (n *VarDecl) nodeString() string { return fmt.Sprintf("VarDecl(%v)", n.Names) }
+
+// LetDecl represents: let x: Type.  or  let x := expr.
+type LetDecl struct {
+	Pos   Pos
+	Name  string
+	Type  string
+	Value Node
+}
+
+func (n *LetDecl) nodePos() Pos       { return n.Pos }
+func (n *LetDecl) nodeString() string { return fmt.Sprintf("LetDecl(%s)", n.Name) }
 
 // Assign represents:  x := expr
 type Assign struct {
@@ -96,7 +107,7 @@ type Assign struct {
 	Value Node
 }
 
-func (n *Assign) nodePos() Pos    { return n.Pos }
+func (n *Assign) nodePos() Pos       { return n.Pos }
 func (n *Assign) nodeString() string { return fmt.Sprintf("Assign(%s)", n.Name) }
 
 // Return represents:  ^expr
@@ -105,7 +116,7 @@ type Return struct {
 	Value Node
 }
 
-func (n *Return) nodePos() Pos    { return n.Pos }
+func (n *Return) nodePos() Pos       { return n.Pos }
 func (n *Return) nodeString() string { return "Return" }
 
 // --- Message sends ----------------------------------------------------------
@@ -117,7 +128,7 @@ type Cascade struct {
 	Messages []Node // UnaryMsg | BinaryMsg | KeywordMsg
 }
 
-func (n *Cascade) nodePos() Pos    { return n.Pos }
+func (n *Cascade) nodePos() Pos       { return n.Pos }
 func (n *Cascade) nodeString() string { return "Cascade" }
 
 // UnaryMsg represents:  receiver selector
@@ -127,7 +138,7 @@ type UnaryMsg struct {
 	Selector string
 }
 
-func (n *UnaryMsg) nodePos() Pos    { return n.Pos }
+func (n *UnaryMsg) nodePos() Pos       { return n.Pos }
 func (n *UnaryMsg) nodeString() string { return fmt.Sprintf("Unary(%s)", n.Selector) }
 
 // BinaryMsg represents:  receiver op arg
@@ -138,7 +149,7 @@ type BinaryMsg struct {
 	Arg      Node
 }
 
-func (n *BinaryMsg) nodePos() Pos    { return n.Pos }
+func (n *BinaryMsg) nodePos() Pos       { return n.Pos }
 func (n *BinaryMsg) nodeString() string { return fmt.Sprintf("Binary(%s)", n.Op) }
 
 // KeywordMsg represents:  receiver key1: arg1 key2: arg2
@@ -149,7 +160,7 @@ type KeywordMsg struct {
 	Args     []Node
 }
 
-func (n *KeywordMsg) nodePos() Pos    { return n.Pos }
+func (n *KeywordMsg) nodePos() Pos { return n.Pos }
 func (n *KeywordMsg) nodeString() string {
 	sel := ""
 	for _, k := range n.Keywords {
@@ -176,7 +187,7 @@ type IntLit struct {
 	Raw   string // original source text
 }
 
-func (n *IntLit) nodePos() Pos    { return n.Pos }
+func (n *IntLit) nodePos() Pos       { return n.Pos }
 func (n *IntLit) nodeString() string { return fmt.Sprintf("Int(%d)", n.Value) }
 
 // FloatLit is a floating-point literal.
@@ -186,7 +197,7 @@ type FloatLit struct {
 	Raw   string
 }
 
-func (n *FloatLit) nodePos() Pos    { return n.Pos }
+func (n *FloatLit) nodePos() Pos       { return n.Pos }
 func (n *FloatLit) nodeString() string { return fmt.Sprintf("Float(%g)", n.Value) }
 
 // StringLit is a string literal (unquoted content).
@@ -195,7 +206,7 @@ type StringLit struct {
 	Value string
 }
 
-func (n *StringLit) nodePos() Pos    { return n.Pos }
+func (n *StringLit) nodePos() Pos       { return n.Pos }
 func (n *StringLit) nodeString() string { return fmt.Sprintf("String(%q)", n.Value) }
 
 // SymbolLit is a symbol literal (without leading #).
@@ -204,7 +215,7 @@ type SymbolLit struct {
 	Value string
 }
 
-func (n *SymbolLit) nodePos() Pos    { return n.Pos }
+func (n *SymbolLit) nodePos() Pos       { return n.Pos }
 func (n *SymbolLit) nodeString() string { return fmt.Sprintf("Symbol(#%s)", n.Value) }
 
 // CharLit is a character literal ($A).
@@ -213,7 +224,7 @@ type CharLit struct {
 	Value rune
 }
 
-func (n *CharLit) nodePos() Pos    { return n.Pos }
+func (n *CharLit) nodePos() Pos       { return n.Pos }
 func (n *CharLit) nodeString() string { return fmt.Sprintf("Char($%c)", n.Value) }
 
 // BoolLit is true or false.
@@ -222,7 +233,7 @@ type BoolLit struct {
 	Value bool
 }
 
-func (n *BoolLit) nodePos() Pos    { return n.Pos }
+func (n *BoolLit) nodePos() Pos       { return n.Pos }
 func (n *BoolLit) nodeString() string { return fmt.Sprintf("Bool(%v)", n.Value) }
 
 // NilLit is nil.
@@ -230,7 +241,7 @@ type NilLit struct {
 	Pos Pos
 }
 
-func (n *NilLit) nodePos() Pos    { return n.Pos }
+func (n *NilLit) nodePos() Pos       { return n.Pos }
 func (n *NilLit) nodeString() string { return "Nil" }
 
 // ArrayLit is a literal array: #( 1 'two' #three )
@@ -239,7 +250,7 @@ type ArrayLit struct {
 	Elements []Node
 }
 
-func (n *ArrayLit) nodePos() Pos    { return n.Pos }
+func (n *ArrayLit) nodePos() Pos       { return n.Pos }
 func (n *ArrayLit) nodeString() string { return fmt.Sprintf("Array(%d)", len(n.Elements)) }
 
 // ByteArrayLit is a literal byte array: #[ 1 2 3 ]
@@ -248,7 +259,7 @@ type ByteArrayLit struct {
 	Bytes []byte
 }
 
-func (n *ByteArrayLit) nodePos() Pos    { return n.Pos }
+func (n *ByteArrayLit) nodePos() Pos       { return n.Pos }
 func (n *ByteArrayLit) nodeString() string { return fmt.Sprintf("ByteArray(%d bytes)", len(n.Bytes)) }
 
 // --- Identifiers and blocks -------------------------------------------------
@@ -259,7 +270,7 @@ type Ident struct {
 	Name string
 }
 
-func (n *Ident) nodePos() Pos    { return n.Pos }
+func (n *Ident) nodePos() Pos       { return n.Pos }
 func (n *Ident) nodeString() string { return fmt.Sprintf("Ident(%s)", n.Name) }
 
 // SelfExpr is the `self` pseudo-variable.
@@ -304,7 +315,7 @@ type Block struct {
 	Body       []Node
 }
 
-func (n *Block) nodePos() Pos    { return n.Pos }
+func (n *Block) nodePos() Pos { return n.Pos }
 func (n *Block) nodeString() string {
 	return fmt.Sprintf("Block(params=%v, body=%d stmts)", n.Params, len(n.Body))
 }
