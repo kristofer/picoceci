@@ -21,6 +21,13 @@ type BlockCaller interface {
 	CallBlock(blk *object.Object, args []*object.Object) (*object.Object, error)
 }
 
+// SourceRunner is an interface that allows builtins to parse and evaluate
+// picoceci source code in the current global environment.
+// Both the tree-walking interpreter and bytecode VM implement this.
+type SourceRunner interface {
+	EvalSource(source string) (*object.Object, error)
+}
+
 // REPLRunner is a function that runs a REPL session on the given reader/writer.
 // It is called by PicoceciREPL serve: when a client connects.
 // The function should block until the session ends (client disconnects or EOF).
@@ -132,7 +139,10 @@ func InitialGlobalsWithSinks(sinks GlobalSinks) map[string]*object.Object {
 	}
 	globals["LED"] = makeLEDObject(ledDriver)
 	globals["SDCard"] = makeSDCardObject()
-	globals["File"] = makeFileClass()
+	// File singleton — file operations with runContents: for script loading.
+	// The SourceRunner is set lazily via SetFileRunner after interpreter/VM init.
+	fileData := &fileObjectData{}
+	globals["File"] = makeFileClass(fileData)
 	globals["Directory"] = makeDirectoryClass()
 	globals["Path"] = makePathClass()
 
@@ -152,6 +162,17 @@ func SetTaskCaller(globals map[string]*object.Object, caller BlockCaller) {
 	if taskObj, ok := globals["Task"]; ok {
 		if data, ok := taskObj.Env.(*taskObjectData); ok {
 			data.caller = caller
+		}
+	}
+}
+
+// SetFileRunner wires the SourceRunner (interpreter or VM) into the File global
+// so that File runContents: can parse and evaluate picoceci source files.
+// Call this once after creating the interpreter or VM.
+func SetFileRunner(globals map[string]*object.Object, runner SourceRunner) {
+	if fileObj, ok := globals["File"]; ok {
+		if data, ok := fileObj.Env.(*fileObjectData); ok {
+			data.runner = runner
 		}
 	}
 }
@@ -815,11 +836,21 @@ func makeSDCardObject() *object.Object {
 	return o
 }
 
-func makeFileClass() *object.Object {
+// ---------------------------------------------------------------------------
+// File global
+// ---------------------------------------------------------------------------
+
+// fileObjectData holds the lazy SourceRunner for File runContents:.
+type fileObjectData struct {
+	runner SourceRunner
+}
+
+func makeFileClass(data *fileObjectData) *object.Object {
 	o := &object.Object{
 		Kind:    object.KindObject,
 		Slots:   make(map[string]*object.Object),
 		Methods: make(map[string]*object.MethodDef),
+		Env:     data,
 	}
 
 	o.Methods["exists:"] = &object.MethodDef{Native: func(_ *object.Object, args []*object.Object) (*object.Object, error) {
@@ -956,6 +987,31 @@ func makeFileClass() *object.Object {
 			return nil, ioError("File size: " + err.Error())
 		}
 		return object.IntObject(info.Size()), nil
+	}}
+
+	// runContents: reads a file and evaluates its contents in the current environment.
+	// All definitions (let, Object, etc.) become available in the global namespace.
+	o.Methods["runContents:"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		fd, ok := self.Env.(*fileObjectData)
+		if !ok || fd == nil || fd.runner == nil {
+			return nil, &Error{Kind: "FileError", Message: "File not initialized; call SetFileRunner after creating interpreter", Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		path, err := requireStringArg(args, 0, "File runContents: path must be a String")
+		if err != nil {
+			return nil, err
+		}
+		// Read the file contents
+		data, err := sdcard.ReadFile(path)
+		if err != nil {
+			return nil, ioError("File runContents: " + err.Error())
+		}
+		// Parse and evaluate the source in the current global environment
+		source := string(data)
+		result, evalErr := fd.runner.EvalSource(source)
+		if evalErr != nil {
+			return nil, &Error{Kind: "FileError", Message: "File runContents: " + evalErr.Error(), Pos: ast.Pos{Line: 1, Col: 1}}
+		}
+		return result, nil
 	}}
 
 	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {

@@ -10,7 +10,9 @@ import (
 	"fmt"
 
 	"github.com/kristofer/picoceci/pkg/ast"
+	"github.com/kristofer/picoceci/pkg/lexer"
 	"github.com/kristofer/picoceci/pkg/object"
+	"github.com/kristofer/picoceci/pkg/parser"
 )
 
 // Error represents a picoceci runtime error.
@@ -321,6 +323,7 @@ func NewWithGlobals(globals map[string]*object.Object) *Interpreter {
 	}
 	registerBuiltinsWithGlobals(interp.globals, cloneGlobals(globals))
 	interp.setupTaskCaller()
+	interp.setupFileRunner()
 	return interp
 }
 
@@ -330,6 +333,16 @@ func (interp *Interpreter) setupTaskCaller() {
 	if taskObj, ok := interp.globals.Get("Task"); ok {
 		if data, ok := taskObj.Env.(*taskObjectData); ok {
 			data.caller = interp
+		}
+	}
+}
+
+// setupFileRunner wires the interpreter as the SourceRunner for the File global.
+// This allows File runContents: to parse and evaluate picoceci source files.
+func (interp *Interpreter) setupFileRunner() {
+	if fileObj, ok := interp.globals.Get("File"); ok {
+		if data, ok := fileObj.Env.(*fileObjectData); ok {
+			data.runner = interp
 		}
 	}
 }
@@ -374,6 +387,18 @@ func (interp *Interpreter) Eval(nodes []ast.Node) (*object.Object, error) {
 		result = val
 	}
 	return result, nil
+}
+
+// EvalSource parses and evaluates picoceci source code in the global environment.
+// This implements the SourceRunner interface for File runContents:.
+func (interp *Interpreter) EvalSource(source string) (*object.Object, error) {
+	lex := lexer.NewString(source)
+	p := parser.New(lex)
+	program, err := p.ParseProgram()
+	if err != nil {
+		return nil, err
+	}
+	return interp.Eval(program.Statements)
 }
 
 // ListGlobals returns a sorted list of all global variable names.

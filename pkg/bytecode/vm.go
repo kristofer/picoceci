@@ -5,7 +5,9 @@ import (
 
 	"github.com/kristofer/picoceci/pkg/ast"
 	"github.com/kristofer/picoceci/pkg/eval"
+	"github.com/kristofer/picoceci/pkg/lexer"
 	"github.com/kristofer/picoceci/pkg/object"
+	"github.com/kristofer/picoceci/pkg/parser"
 )
 
 const (
@@ -78,6 +80,9 @@ func NewVMWithGlobals(globals map[string]*object.Object) *VM {
 	// Wire the VM as the BlockCaller for the Task global so that
 	// Task spawn:name: can call picoceci blocks.
 	eval.SetTaskCaller(vm.globals, vm)
+	// Wire the VM as the SourceRunner for the File global so that
+	// File runContents: can parse and evaluate picoceci source files.
+	eval.SetFileRunner(vm.globals, vm)
 	return vm
 }
 
@@ -174,6 +179,43 @@ func (vm *VM) AddGlobalTypes(globalTypes map[string]string) {
 	for name, typeName := range globalTypes {
 		vm.globalTypes[name] = typeName
 	}
+}
+
+// EvalSource parses, compiles, and runs picoceci source code.
+// This implements the SourceRunner interface for File runContents:.
+func (vm *VM) EvalSource(source string) (*object.Object, error) {
+	lex := lexer.NewString(source)
+	p := parser.New(lex)
+	program, err := p.ParseProgram()
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a fresh compiler seeded with the VM's current global state
+	compiler := NewCompiler()
+	for name, obj := range vm.globals {
+		compiler.globals[name] = obj
+	}
+	for name, typeName := range vm.globalTypes {
+		compiler.globalTypes[name] = typeName
+	}
+
+	chunk, err := compiler.Compile(program.Statements)
+	if err != nil {
+		return nil, err
+	}
+
+	// Merge any new globals from the compiled code
+	for name, obj := range compiler.globals {
+		vm.globals[name] = obj
+	}
+	for name, typeName := range compiler.globalTypes {
+		vm.globalTypes[name] = typeName
+	}
+
+	// Add compiled blocks and run
+	vm.AddBlocksAndAdjustChunk(chunk, compiler.GetBlocks())
+	return vm.Run(chunk)
 }
 
 // Run executes the given chunk and returns the result.
