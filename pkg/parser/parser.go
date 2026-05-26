@@ -277,7 +277,7 @@ func (p *Parser) parseLetDecl() *ast.LetDecl {
 		n.Name = p.cur.Literal
 		p.advance()
 		if p.cur.Kind != lexer.ASSIGN {
-			p.errorf("expected := after let %q, got %q", n.Name, p.cur.Literal)
+			p.errorf("expected := for inferred declaration or name: Type for typed declaration after let %q, got %q", n.Name, p.cur.Literal)
 			return n
 		}
 		p.advance()
