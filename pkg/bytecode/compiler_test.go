@@ -142,7 +142,7 @@ func TestCompileKeywordMessage(t *testing.T) {
 }
 
 func TestCompileChannelSyntax(t *testing.T) {
-	chunk, err := compileSource("| ch: Channel<<Float>> | ch := Channel new: 2. ch <- 3.14. <-ch.")
+	chunk, err := compileSource("let ch: Channel<<Float>>. ch := Channel new: 2. ch <- 3.14. <-ch.")
 	if err != nil {
 		t.Fatalf("compile error: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestCompileChannelSyntax(t *testing.T) {
 }
 
 func TestCompileVarDecl(t *testing.T) {
-	chunk, err := compileSource("| x: Any | x := 42.")
+	chunk, err := compileSource("let x: Any. x := 42.")
 	if err != nil {
 		t.Fatalf("compile error: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestCompileAssignmentRequiresDeclaration(t *testing.T) {
 }
 
 func TestCompileLocalVariable(t *testing.T) {
-	chunk, err := compileSource("| x: Any | x := 42. x.")
+	chunk, err := compileSource("let x: Any. x := 42. x.")
 	if err != nil {
 		t.Fatalf("compile error: %v", err)
 	}

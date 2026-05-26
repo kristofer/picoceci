@@ -112,7 +112,7 @@ func TestIntegrationBytecodeCompilerWithImport(t *testing.T) {
 	loader := module.NewLoader(resolver)
 
 	// Compile code that imports Counter
-	src := `import 'Counter'. | c: Counter | c := Counter new.`
+	src := `import 'Counter'. let c: Counter. c := Counter new.`
 	l := lexer.NewString(src)
 	p := parser.New(l)
 	prog, err := p.ParseProgram()

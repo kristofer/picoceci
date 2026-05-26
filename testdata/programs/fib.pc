@@ -1,5 +1,5 @@
 "Fibonacci — recursive using a recursive block"
-| fib: Any  result: Int |
+let fib: Any. let result: Int.
 fib := [ :n |
     (n <= 1)
         ifTrue:  [ n ]

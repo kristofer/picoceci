@@ -1,6 +1,6 @@
 "Power — integer exponentiation by repeated multiplication"
-| power: Any |
-power := [ :base :exp | | result: Int |
+let power: Any.
+power := [ :base :exp | let result: Int.
     result := 1.
     exp timesRepeat: [ result := result * base ].
     result

@@ -120,10 +120,22 @@ func (p *Parser) parseObjectDecl() *ast.ObjectDecl {
 			vd := p.parseVarDecl()
 			n.Slots = append(n.Slots, vd.Names...)
 			n.SlotTypes = append(n.SlotTypes, vd.Types...)
+		case lexer.LET:
+			ld := p.parseLetDecl()
+			if ld.Type == "" {
+				p.errorf("object slot declaration %q requires an explicit type", ld.Name)
+			} else {
+				n.Slots = append(n.Slots, ld.Name)
+				n.SlotTypes = append(n.SlotTypes, ld.Type)
+			}
+			p.consumeOptional(lexer.DOT)
 		default:
+			before := p.cur
 			m := p.parseMethodDef()
 			if m != nil {
 				n.Methods = append(n.Methods, m)
+			} else if p.cur == before {
+				p.advance()
 			}
 		}
 	}

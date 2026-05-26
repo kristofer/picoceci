@@ -1,7 +1,7 @@
 "Simulate the exact REPL sequence the user tried"
 
 "First: declare variables with Counter type annotation"
-| counter1: Counter counter2: Counter |
+let counter1: Counter. let counter2: Counter.
 
 "Second: try to use Counter before it's declared"
 counter1 := Counter new.

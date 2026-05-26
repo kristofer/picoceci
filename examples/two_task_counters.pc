@@ -2,7 +2,7 @@
 "This version uses the actual Task API: spawn:name:"
 
 object Counter {
-    | count: Int |
+    let count: Int.
 
     init [
         count := 0
@@ -23,7 +23,7 @@ object Counter {
     ]
 }
 
-| counter1: Counter counter2: Counter |
+let counter1: Counter. let counter2: Counter.
 
 "Create two separate Counter instances"
 counter1 := Counter new.

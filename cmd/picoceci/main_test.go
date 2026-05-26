@@ -43,7 +43,7 @@ func TestREPLEmptyLines(t *testing.T) {
 func TestREPLPasteModeBasic(t *testing.T) {
 	// A two-line expression that only makes sense as a unit:
 	// first line alone would fail to parse.
-	input := "---\n| x: Int |\nx := 40 + 2.\nx.\n---\n"
+	input := "---\nlet x: Int.\nx := 40 + 2.\nx.\n---\n"
 	in := strings.NewReader(input)
 	var out, errOut bytes.Buffer
 
@@ -99,12 +99,12 @@ func TestREPLPasteModeSyntaxError(t *testing.T) {
 // object declaration with methods) evaluates correctly when pasted.
 func TestREPLPasteModeMultiline(t *testing.T) {
 	program := `object Counter {
-    | count: Int |
+    let count: Int.
     init  [ count := 0 ]
     inc   [ count := count + 1. ^self ]
     value [ ^count ]
 }
-| c: Counter |
+let c: Counter.
 c := Counter new.
 c inc; inc; inc.
 c value.
@@ -142,7 +142,7 @@ func TestREPLVMSingleLine(t *testing.T) {
 func TestREPLVMPasteRecursiveBlockThenInvoke(t *testing.T) {
 	input := strings.Join([]string{
 		"---",
-		"| fact: Any |",
+		"let fact: Any.",
 		"fact := [ :n |",
 		"    (n <= 1)",
 		"        ifTrue:  [ 1 ]",
@@ -172,7 +172,7 @@ func TestREPLVMPasteRecursiveBlockThenInvoke(t *testing.T) {
 func TestREPLVMChannelRoundTrip(t *testing.T) {
 	input := strings.Join([]string{
 		"---",
-		"| ch: Channel<<Float>> |",
+		"let ch: Channel<<Float>>.",
 		"ch := Channel new: 2.",
 		"ch <- 3.14.",
 		"<-ch.",

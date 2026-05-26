@@ -1,2 +1,2 @@
-| c: UndefinedType |
+let c: UndefinedType.
 c := UndefinedType new.

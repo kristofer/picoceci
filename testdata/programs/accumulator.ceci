@@ -1,6 +1,6 @@
 "Accumulator — a closure-based counter factory; each instance has its own state"
-| makeAccumulator: Any  counter1: Any  counter2: Any |
-makeAccumulator := [ :start | | n: Any |
+let makeAccumulator: Any. let counter1: Any. let counter2: Any.
+makeAccumulator := [ :start | let n: Any.
     n := start.
     [ :amount | n := n + amount. n ]
 ].

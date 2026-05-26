@@ -111,7 +111,7 @@ func TestVMIntAddition(t *testing.T) {
 }
 
 func TestVMChannelRoundTrip(t *testing.T) {
-	result, err := runVM("| ch: Channel<<Float>> | ch := Channel new: 2. ch <- 3.14. <-ch.")
+	result, err := runVM("let ch: Channel<<Float>>. ch := Channel new: 2. ch <- 3.14. <-ch.")
 	if err != nil {
 		t.Fatalf("VM error: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestVMStringSize(t *testing.T) {
 }
 
 func TestVMLocalVariable(t *testing.T) {
-	result, err := runVM("| x: Any | x := 42. x.")
+	result, err := runVM("let x: Any. x := 42. x.")
 	if err != nil {
 		t.Fatalf("VM error: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestVMLocalVariable(t *testing.T) {
 }
 
 func TestVMMultipleLocals(t *testing.T) {
-	result, err := runVM("| x: Int  y: Int | x := 3. y := 4. x + y.")
+	result, err := runVM("let x: Int. let y: Int. x := 3. y := 4. x + y.")
 	if err != nil {
 		t.Fatalf("VM error: %v", err)
 	}
@@ -383,7 +383,7 @@ func TestVMBlockWithArg(t *testing.T) {
 }
 
 func TestVMTimesRepeat(t *testing.T) {
-	result, err := runVM("| sum: Int | sum := 0. 3 timesRepeat: [ sum := sum + 1 ]. sum.")
+	result, err := runVM("let sum: Int. sum := 0. 3 timesRepeat: [ sum := sum + 1 ]. sum.")
 	if err != nil {
 		t.Fatalf("VM error: %v", err)
 	}
@@ -393,7 +393,7 @@ func TestVMTimesRepeat(t *testing.T) {
 }
 
 func TestVMToDo(t *testing.T) {
-	result, err := runVM("| sum: Int | sum := 0. 1 to: 3 do: [ :i | sum := sum + i ]. sum.")
+	result, err := runVM("let sum: Int. sum := 0. 1 to: 3 do: [ :i | sum := sum + i ]. sum.")
 	if err != nil {
 		t.Fatalf("VM error: %v", err)
 	}
@@ -506,7 +506,7 @@ func TestVMStringReversed(t *testing.T) {
 }
 
 func TestVMWhileTrue(t *testing.T) {
-	result, err := runVM("| x: Int | x := 0. [ x < 3 ] whileTrue: [ x := x + 1 ]. x.")
+	result, err := runVM("let x: Int. x := 0. [ x < 3 ] whileTrue: [ x := x + 1 ]. x.")
 	if err != nil {
 		t.Fatalf("VM error: %v", err)
 	}
@@ -527,12 +527,12 @@ func TestVMReturn(t *testing.T) {
 
 func TestVMObjectDeclarationNew(t *testing.T) {
 	result, err := runVM(`object Counter {
-		| count: Int |
+		let count: Int.
 		init [ count := 0 ]
 		inc [ count := count + 1. ^self ]
 		value [ ^count ]
 	}.
-	| c: Counter |
+	let c: Counter.
 	c := Counter new.
 	c inc.
 	c inc.
@@ -547,7 +547,7 @@ func TestVMObjectDeclarationNew(t *testing.T) {
 
 func TestVMObjectComposition(t *testing.T) {
 	result, err := runVM(`object Counter {
-		| count: Int |
+		let count: Int.
 		init [ count := 0 ]
 		inc [ count := count + 1. ^self ]
 		value [ ^count ]
@@ -561,7 +561,7 @@ func TestVMObjectComposition(t *testing.T) {
 		]
 	}.
 
-	| c: LoggedCounter |
+	let c: LoggedCounter.
 	c := LoggedCounter new.
 	c inc.
 	c inc.

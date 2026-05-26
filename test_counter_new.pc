@@ -1,5 +1,5 @@
 object Counter {
-    | count: Int |
+    let count: Int.
     init [
         count := 0
     ]
@@ -12,7 +12,7 @@ object Counter {
     ]
 }
 
-| c: Counter |
+let c: Counter.
 c := Counter new.
 c inc; inc; inc.
 Console println: c value printString.

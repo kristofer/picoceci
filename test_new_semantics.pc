@@ -1,9 +1,9 @@
 object Counter {
-    | count: Int |
+    let count: Int.
     init [ count := 0 ]
 }
 
-| c: Counter instance: Counter |
+let c: Counter. let instance: Counter.
 c := Counter new.
 
 Console println: 'Factory created instance successfully'.
