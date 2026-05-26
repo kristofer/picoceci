@@ -84,22 +84,59 @@ func TestIntegrationBuiltinModules(t *testing.T) {
 	module.RegisterBuiltins(resolver)
 	loader := module.NewLoader(resolver)
 
-	// Load built-in core module
-	_, err := loader.Load("core")
+	modules := []string{
+		"core", "io", "collections",
+		"task", "tasksupervisor", "timestamp", "sdcard", "wifi", "led",
+		"gpio", "uart", "i2c", "spi",
+	}
+	for _, name := range modules {
+		if _, err := loader.Load(name); err != nil {
+			t.Fatalf("failed to load %s builtin: %v", name, err)
+		}
+	}
+}
+
+func TestIntegrationBuiltinModuleGlobals(t *testing.T) {
+	resolver := module.NewResolver(os.ReadFile)
+	module.RegisterBuiltins(resolver)
+	loader := module.NewLoader(resolver)
+
+	collectionsMod, err := loader.Load("collections")
 	if err != nil {
-		t.Fatalf("failed to load core builtin: %v", err)
+		t.Fatalf("failed to load collections builtin: %v", err)
+	}
+	for _, name := range []string{"OrderedCollection", "Dictionary", "Set", "Bag"} {
+		if _, ok := collectionsMod.Globals[name]; !ok {
+			t.Fatalf("expected %s in collections globals", name)
+		}
 	}
 
-	// Load built-in io module
-	_, err = loader.Load("io")
+	ioMod, err := loader.Load("io")
 	if err != nil {
 		t.Fatalf("failed to load io builtin: %v", err)
 	}
+	for _, name := range []string{"ReadStream", "WriteStream"} {
+		if _, ok := ioMod.Globals[name]; !ok {
+			t.Fatalf("expected %s in io globals", name)
+		}
+	}
 
-	// Load built-in collections module
-	_, err = loader.Load("collections")
-	if err != nil {
-		t.Fatalf("failed to load collections builtin: %v", err)
+	for _, tc := range []struct {
+		moduleName string
+		objectName string
+	}{
+		{moduleName: "gpio", objectName: "GPIO"},
+		{moduleName: "uart", objectName: "UART"},
+		{moduleName: "i2c", objectName: "I2C"},
+		{moduleName: "spi", objectName: "SPI"},
+	} {
+		mod, loadErr := loader.Load(tc.moduleName)
+		if loadErr != nil {
+			t.Fatalf("failed to load %s builtin: %v", tc.moduleName, loadErr)
+		}
+		if _, ok := mod.Globals[tc.objectName]; !ok {
+			t.Fatalf("expected %s in %s globals", tc.objectName, tc.moduleName)
+		}
 	}
 }
 
