@@ -18,6 +18,7 @@ Core responsibilities:
 - listen for peers (`listen`)
 - maintain in-memory peer table with TTL (`peers`, `pruneExpired`)
 - request peer by symbolic name (`lookup:`)
+- provide name-to-channel resolution for `NetworkChannel` endpoints
 
 Candidate messages:
 
@@ -27,14 +28,18 @@ Candidate messages:
 - `Discovery peers`
 - `Discovery lookup: aName`
 - `Discovery registerName: aName`
+- `Discovery channelFor: aName`
+- `Discovery resolveForNetworkChannel: aName`
 
-### `NodeCache` (optional singleton/service)
+### `NodeCache` (optional service; one or more instances)
 
 Core responsibilities:
 
 - accept registrations from nodes (`register:name:addr:ttl:`)
 - answer name/address lookups (`resolve:`)
 - mirror recent announcements for warm restart
+- exchange cache summaries/deltas with peer NodeCache instances
+- maintain conflict metadata when duplicate names are detected
 
 Candidate messages:
 
@@ -43,6 +48,35 @@ Candidate messages:
 - `NodeCache register: aNodeInfo`
 - `NodeCache resolve: aName`
 - `NodeCache entries`
+- `NodeCache addPeerCache: endpoint`
+- `NodeCache syncWithPeers`
+- `NodeCache conflicts`
+
+## Discovery + `NetworkChannel` Unification (proposed)
+
+`NetworkChannel` usage in docs/examples should route through Discovery instead of
+hard-coded host/port whenever symbolic names are available.
+
+Current style in examples:
+
+```picoceci
+let outgoing: Any.
+outgoing := NetworkChannel connectTo: '192.168.1.10' port: 7001.
+```
+
+Proposed unified style:
+
+```picoceci
+let outgoing: Any.
+Discovery registerName: 'telemetry-collector'.
+outgoing := NetworkChannel connectToName: 'telemetry-collector'.
+```
+
+Proposed layering:
+
+- `NetworkChannel connectToName:` asks `Discovery lookup:` for endpoint records.
+- `Discovery` first checks local peer table, then one-or-more `NodeCache` services.
+- `NetworkChannel` remains transport-focused; Discovery owns naming and peer selection.
 
 ## Wire Protocol (v0 draft)
 
@@ -56,6 +90,10 @@ Candidate messages:
   - `timestamp`
 - Dedup key: `nodeId`.
 - Expiry: prune when `now > lastSeen + ttlMs`.
+- NodeCache sync messages:
+  - `cacheSummary` (cacheId, revision, entryCount, digest)
+  - `cacheDelta` (upserts + tombstones since revision N)
+  - `cacheConflict` (name, candidate records, selected winner metadata)
 
 ## Runtime Model
 
@@ -66,6 +104,7 @@ Candidate messages:
 - Failure mode:
   - if multicast unavailable, fallback to NodeCache-only mode
   - if NodeCache unavailable, continue in peer-to-peer mode
+  - if one NodeCache is unavailable, continue with remaining caches
 
 ## Jini/Go-Inspired Notes
 
@@ -74,6 +113,51 @@ Candidate messages:
   - inbound announce channel
   - timer/ticker channel for TTL pruning
   - command channel for lookup/register API
+  - cache-sync channel for NodeCache peer reconciliation
+
+## Multi-NodeCache Synchronization Model (v0)
+
+- Each NodeCache has a unique `cacheId` and monotonically increasing `revision`.
+- Caches gossip `cacheSummary`, then request/apply `cacheDelta` updates.
+- Deltas include tombstones so removals converge.
+- Eventual consistency is acceptable for v0; reads may be stale briefly.
+
+Suggested anti-entropy cadence:
+
+- periodic full-summary exchange (for drift detection)
+- frequent small deltas (for low-latency updates)
+- on-demand resync when digest mismatch persists
+
+## Duplicate Node Name Conflicts (proposals)
+
+Two or more nodes claiming the same logical name must be detected and resolved.
+
+### Option A: deterministic winner (simple default)
+
+- Winner is lowest `(priority, firstSeenTimestamp, nodeId)` tuple.
+- Pros: deterministic, easy to implement.
+- Cons: can pin an old/wrong node until TTL expiry or explicit unclaim.
+
+### Option B: lease/claim token (safer for active ownership)
+
+- `registerName:` returns a lease token with expiration.
+- Only lease holder can refresh or release the name.
+- Pros: clearer ownership, fewer accidental collisions.
+- Cons: requires lease renewal and clock/timeout handling.
+
+### Option C: allow multi-owner + client-side selection
+
+- Keep multiple records for same name.
+- Discovery returns ranked candidates; `NetworkChannel` picks by policy
+  (nearest RSSI/latency, role tag, random, round-robin).
+- Pros: resilient and load-balancing friendly.
+- Cons: pushes complexity to clients/policies.
+
+Recommended v0 approach:
+
+- implement Option A immediately (deterministic winner + conflict reporting),
+- keep conflict set visible via `NodeCache conflicts`,
+- design Option B lease semantics for next iteration.
 
 ## Security (initial constraints)
 
