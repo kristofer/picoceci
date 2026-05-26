@@ -120,7 +120,7 @@ const sdcardSource = `
 `
 
 const wifiSource = `
-" Wifi module - runtime-backed Wifi singleton object is a global. "
+" WiFi module - runtime-backed WiFi singleton object is a global. "
 `
 
 const ledSource = `
