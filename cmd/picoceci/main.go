@@ -124,7 +124,7 @@ func runFileVM(path string) {
 		os.Exit(1)
 	}
 
-	if _, err := execSourceVM(string(src), createModuleLoader(), nil, nil); err != nil {
+	if _, err := execSourceVM(string(src), createModuleLoader(), nil, nil, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "picoceci: runtime error: %v\n", err)
 		os.Exit(1)
 	}
@@ -232,12 +232,12 @@ func runREPLWithIO(r io.Reader, out, errOut io.Writer) {
 // runREPLWithVMIO is the bytecode-VM counterpart of runREPLWithIO.
 func runREPLWithVMIO(r io.Reader, out, errOut io.Writer) {
 	loader := createModuleLoader()
-	// Initialize globals with built-in objects (Console, Task, etc.)
-	// similar to how ESP32 version does it
-	globals := eval.InitialGlobalsWithSinks(eval.GlobalSinks{
+	seedVM := bytecode.NewVMWithSinks(eval.GlobalSinks{
 		ConsoleWriter:    out,
 		TranscriptWriter: out,
 	})
+	globals := seedVM.Globals()
+	globalTypes := seedVM.GlobalTypes()
 	blocks := make([]*bytecode.CompiledBlock, 0)
 
 	scanner := bufio.NewScanner(r)
@@ -268,7 +268,7 @@ func runREPLWithVMIO(r io.Reader, out, errOut io.Writer) {
 				if src == "" {
 					continue
 				}
-				execSourceWithVMIO(loader, globals, &blocks, src, out, errOut)
+				execSourceWithVMIO(loader, globals, globalTypes, &blocks, src, out, errOut)
 			}
 			continue
 		}
@@ -288,7 +288,7 @@ func runREPLWithVMIO(r io.Reader, out, errOut io.Writer) {
 			continue
 		}
 
-		execSourceWithVMIO(loader, globals, &blocks, line, out, errOut)
+		execSourceWithVMIO(loader, globals, globalTypes, &blocks, line, out, errOut)
 	}
 	fmt.Fprintln(out)
 }
@@ -313,8 +313,8 @@ func evalSourceWithIO(interp *eval.Interpreter, src string, out, errOut io.Write
 }
 
 // execSourceWithVMIO parses, compiles, and executes src with the bytecode VM.
-func execSourceWithVMIO(loader *module.Loader, globals map[string]*object.Object, blocks *[]*bytecode.CompiledBlock, src string, out, errOut io.Writer) {
-	result, err := execSourceVM(src, loader, globals, blocks)
+func execSourceWithVMIO(loader *module.Loader, globals map[string]*object.Object, globalTypes map[string]string, blocks *[]*bytecode.CompiledBlock, src string, out, errOut io.Writer) {
+	result, err := execSourceVM(src, loader, globals, globalTypes, blocks)
 	if err != nil {
 		fmt.Fprintf(errOut, "error: %v\n", err)
 		return
@@ -324,7 +324,7 @@ func execSourceWithVMIO(loader *module.Loader, globals map[string]*object.Object
 	}
 }
 
-func execSourceVM(src string, loader *module.Loader, globals map[string]*object.Object, blocks *[]*bytecode.CompiledBlock) (*object.Object, error) {
+func execSourceVM(src string, loader *module.Loader, globals map[string]*object.Object, globalTypes map[string]string, blocks *[]*bytecode.CompiledBlock) (*object.Object, error) {
 	prog, err := parseSource([]byte(src))
 	if err != nil {
 		return nil, fmt.Errorf("parse error: %w", err)
@@ -336,6 +336,7 @@ func execSourceVM(src string, loader *module.Loader, globals map[string]*object.
 	}
 	if globals != nil {
 		c.SetTopLevelVarsAreGlobals(true)
+		c.SeedGlobals(globals, globalTypes)
 	}
 	chunk, err := c.Compile(prog.Statements)
 	if err != nil {
@@ -348,6 +349,7 @@ func execSourceVM(src string, loader *module.Loader, globals map[string]*object.
 		vm.AddGlobals(globals)
 	}
 	vm.AddGlobals(c.GetGlobals())
+	vm.AddGlobalTypes(c.GetGlobalTypes())
 
 	result, err := vm.Run(chunk)
 	if err != nil {
@@ -357,6 +359,9 @@ func execSourceVM(src string, loader *module.Loader, globals map[string]*object.
 	if globals != nil {
 		for name, val := range vm.Globals() {
 			globals[name] = val
+		}
+		for name, typeName := range vm.GlobalTypes() {
+			globalTypes[name] = typeName
 		}
 	}
 	if blocks != nil {

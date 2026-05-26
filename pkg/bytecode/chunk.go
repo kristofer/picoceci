@@ -9,9 +9,11 @@ import (
 
 // Chunk holds compiled bytecode and associated constant pool.
 type Chunk struct {
-	Code      []byte           // bytecode instructions
-	Constants []*object.Object // constant pool (strings, floats, symbols, blocks)
-	Lines     []int            // source line for each byte (for error messages)
+	Code       []byte           // bytecode instructions
+	Constants  []*object.Object // constant pool (strings, floats, symbols, blocks)
+	Lines      []int            // source line for each byte (for error messages)
+	LocalCount int
+	LocalTypes []string
 }
 
 // NewChunk creates a new empty chunk.
@@ -163,6 +165,7 @@ type Upvalue struct {
 type CompiledBlock struct {
 	Arity      int       // number of parameters
 	LocalCount int       // number of local variables (including params)
+	LocalTypes []string  // declared or inferred type for each local slot; "Any" = dynamic
 	Upvalues   []Upvalue // captured variable descriptors
 	Chunk      *Chunk    // the bytecode
 	Name       string    // for debugging (e.g., "block in Counter>>increment")

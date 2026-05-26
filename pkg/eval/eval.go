@@ -73,6 +73,23 @@ func (e *Env) Get(name string) (*object.Object, bool) {
 	return nil, false
 }
 
+// HasBinding reports whether name exists in this environment, an outer
+// environment, or the visible instance slots for a method environment.
+func (e *Env) HasBinding(name string) bool {
+	if _, ok := e.vars[name]; ok {
+		return true
+	}
+	if e.selfObj != nil && e.selfObj.Slots != nil {
+		if _, ok := e.selfObj.Slots[name]; ok {
+			return true
+		}
+	}
+	if e.outer != nil {
+		return e.outer.HasBinding(name)
+	}
+	return false
+}
+
 // Set creates or updates a variable in the innermost scope where it exists,
 // or defines it in the current scope if not found anywhere.
 func (e *Env) Set(name string, val *object.Object) {
@@ -217,15 +234,21 @@ func typeMatches(typeName string, val *object.Object) bool {
 		return val.Kind == object.KindByteArray
 	case "Array":
 		return val.Kind == object.KindArray
+	case "Block":
+		return val.Kind == object.KindBlock
 	case "Nil":
 		return val.Kind == object.KindNil
 	default:
-		// User-defined object or interface type name (any IDENTIFIER not matching a
-		// built-in type keyword). Accepts KindObject (an instance of any user object)
-		// or KindNil (the unassigned zero value for user-defined types). Unrecognised
-		// type names are treated as user-defined; typos will not be caught at parse
-		// time — only incorrect kind assignments trigger TypeError at runtime.
-		return val.Kind == object.KindObject || val.Kind == object.KindNil
+		if val.Kind == object.KindNil {
+			return true
+		}
+		if val.Kind != object.KindObject {
+			return false
+		}
+		if typeName == "Object" {
+			return true
+		}
+		return val.TypeName == "" || val.TypeName == typeName
 	}
 }
 
@@ -254,9 +277,16 @@ func kindTypeName(val *object.Object) string {
 	case object.KindBlock:
 		return "Block"
 	case object.KindObject:
+		if val.TypeName != "" {
+			return val.TypeName
+		}
 		return "Object"
 	}
 	return "Unknown"
+}
+
+func inferDeclaredType(val *object.Object) string {
+	return kindTypeName(val)
 }
 
 // EvalModuleLoader is an interface for loading modules in the interpreter.
@@ -372,7 +402,22 @@ func (interp *Interpreter) evalNode(n ast.Node, env *Env) (*object.Object, error
 			env.DefineTyped(name, typeName)
 		}
 		return object.Nil, nil
+	case *ast.LetDecl:
+		if node.Value == nil {
+			env.DefineTyped(node.Name, node.Type)
+			return object.Nil, nil
+		}
+		val, err := interp.evalNode(node.Value, env)
+		if err != nil {
+			return nil, err
+		}
+		env.DefineTyped(node.Name, inferDeclaredType(val))
+		env.Set(node.Name, val)
+		return object.Nil, nil
 	case *ast.Assign:
+		if !env.HasBinding(node.Name) {
+			return nil, &Error{Kind: "UndefinedVariable", Message: "undefined: " + node.Name, Pos: node.Pos}
+		}
 		val, err := interp.evalNode(node.Value, env)
 		if err != nil {
 			return nil, err
@@ -782,6 +827,7 @@ func (interp *Interpreter) registerObjectDecl(decl *ast.ObjectDecl, env *Env) {
 	capturedSlotTypes := allSlotTypes
 	factory := &object.Object{
 		Kind:            object.KindObject,
+		TypeName:        decl.Name,
 		Slots:           make(map[string]*object.Object),
 		SlotTypes:       capturedSlotTypes,
 		Methods:         make(map[string]*object.MethodDef),
@@ -811,6 +857,7 @@ func (interp *Interpreter) registerObjectDecl(decl *ast.ObjectDecl, env *Env) {
 		Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
 			inst := &object.Object{
 				Kind:            object.KindObject,
+				TypeName:        self.TypeName,
 				Slots:           make(map[string]*object.Object),
 				SlotTypes:       self.SlotTypes, // share slot type table
 				Methods:         self.Methods,   // share method table

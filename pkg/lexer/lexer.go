@@ -63,6 +63,7 @@ const (
 	INTERFACE   // interface
 	COMPOSE     // compose
 	IMPORT      // import
+	LET         // let
 
 	// Sentinel
 	EOF
@@ -88,7 +89,7 @@ func kindName(k Kind) string {
 		"IDENTIFIER", "KEYWORD", "BINOP",
 		"DOT", "SEMICOLON", "CARET", "ASSIGN", "PIPE",
 		"LBRACKET", "RBRACKET", "LPAREN", "RPAREN", "LBRACE", "RBRACE", "COLON",
-		"SELF", "SUPER", "THISCONTEXT", "OBJECT", "INTERFACE", "COMPOSE", "IMPORT",
+		"SELF", "SUPER", "THISCONTEXT", "OBJECT", "INTERFACE", "COMPOSE", "IMPORT", "LET",
 		"EOF", "ILLEGAL",
 	}
 	if int(k) < len(names) {
@@ -401,6 +402,8 @@ func (l *Lexer) readIdentifierOrKeyword() Token {
 		return Token{Kind: COMPOSE, Literal: lit, Line: l.line, Col: l.col}
 	case "import":
 		return Token{Kind: IMPORT, Literal: lit, Line: l.line, Col: l.col}
+	case "let":
+		return Token{Kind: LET, Literal: lit, Line: l.line, Col: l.col}
 	}
 
 	return Token{Kind: IDENTIFIER, Literal: lit, Line: l.line, Col: l.col}

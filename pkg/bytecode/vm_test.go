@@ -17,6 +17,7 @@ func runVM(src string) (*object.Object, error) {
 	}
 
 	c := NewCompiler()
+	c.SetTopLevelVarsAreGlobals(true)
 	chunk, err := c.Compile(prog.Statements)
 	if err != nil {
 		return nil, err
@@ -25,6 +26,7 @@ func runVM(src string) (*object.Object, error) {
 	vm := NewVM()
 	vm.SetBlocks(c.GetBlocks())
 	vm.AddGlobals(c.GetGlobals())
+	vm.AddGlobalTypes(c.GetGlobalTypes())
 	return vm.Run(chunk)
 }
 
@@ -215,6 +217,40 @@ func TestVMMultipleLocals(t *testing.T) {
 	}
 }
 
+func TestVMLetDeclTyped(t *testing.T) {
+	result, err := runVM("let x: Int. x := 42. x.")
+	if err != nil {
+		t.Fatalf("VM error: %v", err)
+	}
+	if result.Kind != object.KindSmallInt || result.IVal != 42 {
+		t.Errorf("expected 42, got %s", result.PrintString())
+	}
+}
+
+func TestVMLetDeclInferredLocksType(t *testing.T) {
+	result, err := runVM("let title := 'picoceci'. title.")
+	if err != nil {
+		t.Fatalf("VM error: %v", err)
+	}
+	if result.Kind != object.KindString || result.SVal != "picoceci" {
+		t.Errorf("expected 'picoceci', got %s", result.PrintString())
+	}
+}
+
+func TestVMLetDeclInferredTypeCheckFails(t *testing.T) {
+	_, err := runVM("let x := 1. x := 'hello'.")
+	if err == nil {
+		t.Fatal("expected type error")
+	}
+}
+
+func TestVMAssignmentRequiresDeclaration(t *testing.T) {
+	_, err := runVM("x := 1.")
+	if err == nil {
+		t.Fatal("expected undeclared assignment error")
+	}
+}
+
 func TestVMIfTrue(t *testing.T) {
 	result, err := runVM("true ifTrue: [ 42 ].")
 	if err != nil {
@@ -226,25 +262,26 @@ func TestVMIfTrue(t *testing.T) {
 }
 
 func TestVMAddBlocksAndAdjustChunk_IncrementalCompile(t *testing.T) {
-	compile := func(src string) (*Chunk, []*CompiledBlock, map[string]*object.Object, error) {
+	compile := func(src string) (*Chunk, []*CompiledBlock, map[string]*object.Object, map[string]string, error) {
 		l := lexer.NewString(src)
 		p := parser.New(l)
 		prog, err := p.ParseProgram()
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		c := NewCompiler()
+		c.SetTopLevelVarsAreGlobals(true)
 		chunk, err := c.Compile(prog.Statements)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
-		return chunk, c.GetBlocks(), c.GetGlobals(), nil
+		return chunk, c.GetBlocks(), c.GetGlobals(), c.GetGlobalTypes(), nil
 	}
 
 	// First input defines a recursive global closure with nested block literals.
-	chunk1, blocks1, globals1, err := compile("fact := [ :n | (n <= 1) ifTrue: [ 1 ] ifFalse: [ n * (fact value: n - 1) ] ].")
+	chunk1, blocks1, globals1, globalTypes1, err := compile("let fact := [ :n | (n <= 1) ifTrue: [ 1 ] ifFalse: [ n * (fact value: n - 1) ] ].")
 	if err != nil {
 		t.Fatalf("compile1 error: %v", err)
 	}
@@ -252,12 +289,13 @@ func TestVMAddBlocksAndAdjustChunk_IncrementalCompile(t *testing.T) {
 	vm := NewVM()
 	vm.SetBlocks(blocks1)
 	vm.AddGlobals(globals1)
+	vm.AddGlobalTypes(globalTypes1)
 	if _, err := vm.Run(chunk1); err != nil {
 		t.Fatalf("run1 error: %v", err)
 	}
 
 	// Second input is compiled from a fresh compiler and contains new closures.
-	chunk2, blocks2, globals2, err := compile("[ :x | x + 1 ] value: 41.")
+	chunk2, blocks2, globals2, globalTypes2, err := compile("[ :x | x + 1 ] value: 41.")
 	if err != nil {
 		t.Fatalf("compile2 error: %v", err)
 	}
@@ -266,6 +304,7 @@ func TestVMAddBlocksAndAdjustChunk_IncrementalCompile(t *testing.T) {
 		t.Fatalf("AddBlocksAndAdjustChunk error: %v", err)
 	}
 	vm.AddGlobals(globals2)
+	vm.AddGlobalTypes(globalTypes2)
 
 	res2, err := vm.Run(chunk2)
 	if err != nil {
@@ -276,7 +315,7 @@ func TestVMAddBlocksAndAdjustChunk_IncrementalCompile(t *testing.T) {
 	}
 
 	// Third input calls the old recursive closure; old block indices must still work.
-	chunk3, blocks3, globals3, err := compile("fact value: 10.")
+	chunk3, blocks3, globals3, globalTypes3, err := compile("fact value: 10.")
 	if err != nil {
 		t.Fatalf("compile3 error: %v", err)
 	}
@@ -284,6 +323,7 @@ func TestVMAddBlocksAndAdjustChunk_IncrementalCompile(t *testing.T) {
 		t.Fatalf("AddBlocksAndAdjustChunk (third input) error: %v", err)
 	}
 	vm.AddGlobals(globals3)
+	vm.AddGlobalTypes(globalTypes3)
 
 	res3, err := vm.Run(chunk3)
 	if err != nil {

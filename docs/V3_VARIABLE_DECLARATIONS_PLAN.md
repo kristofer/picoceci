@@ -1,7 +1,7 @@
 # picoceci v3 — Variable Declaration Syntax Recommendation and Migration Plan
 
-Version: 0.1-draft  
-Status: **Planning only — no implementation has been started**  
+Version: 0.2  
+Status: **Phases 1 and 2 implemented; phases 3-5 still pending**  
 Author: picoceci contributors
 
 ---
@@ -16,6 +16,26 @@ x := 1.
 ```
 
 This is explicit and type-safe, but awkward to read and edit in longer methods. The v3 goal is to keep v2’s type guarantees while improving declaration ergonomics.
+
+---
+
+## Implementation status
+
+- [x] **Phase 1 — Grammar and parser introduction**
+  - `let` is now tokenized and parsed in both supported forms:
+    - `let x: Type.`
+    - `let x := expr.`
+  - Existing v2 `| ... |` declarations still parse for compatibility.
+- [x] **Phase 2 — Interpreter/VM declaration semantics**
+  - Tree-walking interpreter and bytecode VM both implement `let`.
+  - `let x := expr.` now locks the declared type from the initial runtime value.
+  - `name := expr` now requires a prior declaration instead of implicitly creating a variable.
+- [ ] **Phase 3 — Repository-wide source rewrites**
+- [ ] **Phase 4 — Language spec and grammar documents update**
+- [ ] **Phase 5 — Compatibility removal and stabilization**
+
+Current implementation note:
+- Inferred declarations lock to the runtime kind name. User-defined object instances keep their object name when available; otherwise object values fall back to `Object`.
 
 ---
 
@@ -71,6 +91,8 @@ After repository-wide rewrites are complete, remove v2 pipe declarations in v3-f
 
 ### Phase 1 — Grammar and parser introduction (dual syntax)
 
+Status: **Implemented**
+
 Scope:
 - Add `let` token and `let` declaration grammar.
 - Add AST node(s) for `let` declarations:
@@ -83,6 +105,8 @@ Acceptance:
 - Existing v2 tests still pass unchanged.
 
 ### Phase 2 — Interpreter/VM declaration semantics
+
+Status: **Implemented**
 
 Scope:
 - Implement `let` evaluation in tree-walking interpreter and bytecode VM.
@@ -101,6 +125,8 @@ Acceptance:
 
 ### Phase 3 — Repository-wide source rewrites (tests/examples/docs)
 
+Status: **Not started**
+
 Scope:
 - Rewrite picoceci source in:
   - `examples/**/*.pc`
@@ -116,6 +142,8 @@ Acceptance:
 
 ### Phase 4 — Language spec and grammar documents update
 
+Status: **Not started**
+
 Scope:
 - Update `LANGUAGE_SPEC.md`:
   - lexical tokens (`let`)
@@ -130,6 +158,8 @@ Acceptance:
 - No contradictory v2 declaration guidance remains in primary docs.
 
 ### Phase 5 — Compatibility removal and stabilization
+
+Status: **Not started**
 
 Scope:
 - Remove parser/runtime support for v2 pipe declarations.

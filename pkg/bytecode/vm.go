@@ -15,20 +15,22 @@ const (
 
 // VM executes compiled bytecode.
 type VM struct {
-	globals    map[string]*object.Object // global namespace
-	stack      [maxStackSize]*object.Object
-	sp         int // stack pointer (points to next free slot)
-	frames     [maxFrameCount]CallFrame
-	frameCount int
-	blocks     []*CompiledBlock // compiled block templates
+	globals     map[string]*object.Object // global namespace
+	globalTypes map[string]string
+	stack       [maxStackSize]*object.Object
+	sp          int // stack pointer (points to next free slot)
+	frames      [maxFrameCount]CallFrame
+	frameCount  int
+	blocks      []*CompiledBlock // compiled block templates
 }
 
 // CallFrame represents a single activation record.
 type CallFrame struct {
-	closure *Closure       // the closure being executed
-	ip      int            // instruction pointer within chunk
-	bp      int            // base pointer (stack frame start)
-	selfObj *object.Object // 'self' for method calls
+	closure    *Closure       // the closure being executed
+	ip         int            // instruction pointer within chunk
+	bp         int            // base pointer (stack frame start)
+	selfObj    *object.Object // 'self' for method calls
+	localTypes []string
 }
 
 // Closure is a runtime closure (CompiledBlock + captured upvalues).
@@ -45,6 +47,7 @@ type UpvalueRef struct {
 	Closed    bool           // true once the enclosing scope has exited
 	StackSlot int            // stack slot index (when open)
 	VM        *VM            // reference to VM for stack access (when open)
+	TypeName  string         // declared type of the captured variable for assignment checks
 }
 
 // NewVM creates a new VM with default globals.
@@ -60,14 +63,17 @@ func NewVMWithSinks(sinks eval.GlobalSinks) *VM {
 // NewVMWithGlobals creates a VM with an explicit global namespace.
 func NewVMWithGlobals(globals map[string]*object.Object) *VM {
 	copiedGlobals := make(map[string]*object.Object, len(globals))
+	globalTypes := make(map[string]string, len(globals))
 	for name, val := range globals {
 		copiedGlobals[name] = val
+		globalTypes[name] = inferDeclaredType(val)
 	}
 
 	vm := &VM{
-		globals: copiedGlobals,
-		sp:      0,
-		blocks:  make([]*CompiledBlock, 0),
+		globals:     copiedGlobals,
+		globalTypes: globalTypes,
+		sp:          0,
+		blocks:      make([]*CompiledBlock, 0),
 	}
 	// Wire the VM as the BlockCaller for the Task global so that
 	// Task spawn:name: can call picoceci blocks.
@@ -157,6 +163,16 @@ func adjustClosureIndices(chunk *Chunk, base int) error {
 func (vm *VM) AddGlobals(globals map[string]*object.Object) {
 	for name, obj := range globals {
 		vm.globals[name] = obj
+		if _, ok := vm.globalTypes[name]; !ok {
+			vm.globalTypes[name] = inferDeclaredType(obj)
+		}
+	}
+}
+
+// AddGlobalTypes merges declared global type metadata into the VM.
+func (vm *VM) AddGlobalTypes(globalTypes map[string]string) {
+	for name, typeName := range globalTypes {
+		vm.globalTypes[name] = typeName
 	}
 }
 
@@ -165,7 +181,8 @@ func (vm *VM) Run(chunk *Chunk) (*object.Object, error) {
 	// Create a main closure
 	mainBlock := &CompiledBlock{
 		Arity:      0,
-		LocalCount: 0,
+		LocalCount: chunk.LocalCount,
+		LocalTypes: append([]string(nil), chunk.LocalTypes...),
 		Chunk:      chunk,
 		Name:       "<main>",
 	}
@@ -173,11 +190,15 @@ func (vm *VM) Run(chunk *Chunk) (*object.Object, error) {
 
 	// Push initial frame
 	vm.frames[0] = CallFrame{
-		closure: mainClosure,
-		ip:      0,
-		bp:      0,
+		closure:    mainClosure,
+		ip:         0,
+		bp:         0,
+		localTypes: append([]string(nil), mainBlock.LocalTypes...),
 	}
 	vm.frameCount = 1
+	for i := 0; i < mainBlock.LocalCount; i++ {
+		vm.push(zeroValueFor(frameLocalType(&vm.frames[0], i)))
+	}
 
 	return vm.run()
 }
@@ -210,11 +231,12 @@ func (vm *VM) CallBlock(blk *object.Object, args []*object.Object) (*object.Obje
 	frame.ip = 0
 	frame.bp = vm.sp - len(args)
 	frame.selfObj = nil
+	frame.localTypes = append([]string(nil), closure.Block.LocalTypes...)
 	vm.frameCount++
 
 	// Allocate space for locals beyond parameters
 	for i := len(args); i < closure.Block.LocalCount; i++ {
-		vm.push(object.Nil)
+		vm.push(zeroValueFor(frameLocalType(frame, i)))
 	}
 
 	// Run until this frame returns
@@ -310,7 +332,11 @@ func (vm *VM) step() (*object.Object, bool, error) {
 	case OpStoreLocal:
 		slot := int(chunk.Code[frame.ip])
 		frame.ip++
-		vm.stack[frame.bp+slot] = vm.pop()
+		val := vm.pop()
+		if err := vm.checkDeclaredType(frameLocalType(frame, slot), fmt.Sprintf("local %d", slot), val); err != nil {
+			return nil, false, err
+		}
+		vm.stack[frame.bp+slot] = val
 
 	case OpPushUpvalue:
 		idx := int(chunk.Code[frame.ip])
@@ -332,6 +358,9 @@ func (vm *VM) step() (*object.Object, bool, error) {
 		val := vm.pop()
 		if idx < len(frame.closure.Upvalues) {
 			uv := frame.closure.Upvalues[idx]
+			if err := vm.checkDeclaredType(uv.TypeName, fmt.Sprintf("captured variable %d", idx), val); err != nil {
+				return nil, false, err
+			}
 			if uv.Closed {
 				uv.Value = val
 			} else {
@@ -359,6 +388,11 @@ func (vm *VM) step() (*object.Object, bool, error) {
 		val := vm.pop()
 		if frame.selfObj != nil && frame.selfObj.Slots != nil {
 			name := chunk.Constants[idx].SVal
+			if frame.selfObj.SlotTypes != nil {
+				if err := vm.checkDeclaredType(frame.selfObj.SlotTypes[name], name, val); err != nil {
+					return nil, false, err
+				}
+			}
 			frame.selfObj.Slots[name] = val
 		}
 
@@ -376,7 +410,35 @@ func (vm *VM) step() (*object.Object, bool, error) {
 		idx := chunk.ReadUint16(frame.ip)
 		frame.ip += 2
 		name := chunk.Constants[idx].SVal
-		vm.globals[name] = vm.pop()
+		val := vm.pop()
+		if err := vm.checkDeclaredType(vm.globalTypes[name], name, val); err != nil {
+			return nil, false, err
+		}
+		vm.globals[name] = val
+
+	case OpSetLocalType:
+		slot := int(chunk.Code[frame.ip])
+		frame.ip++
+		typeIdx := chunk.ReadUint16(frame.ip)
+		frame.ip += 2
+		vm.setFrameLocalType(frame, slot, chunk.Constants[typeIdx].SVal)
+
+	case OpInferLocalType:
+		slot := int(chunk.Code[frame.ip])
+		frame.ip++
+		vm.setFrameLocalType(frame, slot, inferDeclaredType(vm.peek(0)))
+
+	case OpSetGlobalType:
+		nameIdx := chunk.ReadUint16(frame.ip)
+		frame.ip += 2
+		typeIdx := chunk.ReadUint16(frame.ip)
+		frame.ip += 2
+		vm.globalTypes[chunk.Constants[nameIdx].SVal] = chunk.Constants[typeIdx].SVal
+
+	case OpInferGlobalType:
+		nameIdx := chunk.ReadUint16(frame.ip)
+		frame.ip += 2
+		vm.globalTypes[chunk.Constants[nameIdx].SVal] = inferDeclaredType(vm.peek(0))
 
 	case OpSend:
 		selIdx := chunk.ReadUint16(frame.ip)
@@ -427,6 +489,7 @@ func (vm *VM) step() (*object.Object, bool, error) {
 					StackSlot: slot,
 					VM:        vm,
 					Closed:    false, // Open upvalue references stack slot
+					TypeName:  frameLocalType(frame, int(uv.Index)),
 				}
 			} else {
 				// Capture from current frame's upvalues
@@ -629,10 +692,11 @@ func (vm *VM) callCompiledMethod(self *object.Object, block *CompiledBlock, args
 	frame.ip = 0
 	frame.bp = vm.sp - len(args)
 	frame.selfObj = self
+	frame.localTypes = append([]string(nil), block.LocalTypes...)
 	vm.frameCount++
 
 	for i := len(args); i < block.LocalCount; i++ {
-		vm.push(object.Nil)
+		vm.push(zeroValueFor(frameLocalType(frame, i)))
 	}
 
 	return vm.runFrame(savedFrameCount)
@@ -665,6 +729,7 @@ func (vm *VM) peek(distance int) *object.Object {
 // SetGlobal sets a global variable.
 func (vm *VM) SetGlobal(name string, val *object.Object) {
 	vm.globals[name] = val
+	vm.globalTypes[name] = inferDeclaredType(val)
 }
 
 // GetGlobal gets a global variable.
@@ -680,4 +745,44 @@ func (vm *VM) Globals() map[string]*object.Object {
 		out[name] = val
 	}
 	return out
+}
+
+// GlobalTypes returns a copy of the VM's global type table.
+func (vm *VM) GlobalTypes() map[string]string {
+	out := make(map[string]string, len(vm.globalTypes))
+	for name, typeName := range vm.globalTypes {
+		out[name] = typeName
+	}
+	return out
+}
+
+func frameLocalType(frame *CallFrame, slot int) string {
+	if slot < 0 || slot >= len(frame.localTypes) {
+		return ""
+	}
+	return frame.localTypes[slot]
+}
+
+func (vm *VM) setFrameLocalType(frame *CallFrame, slot int, typeName string) {
+	if slot < 0 {
+		return
+	}
+	for len(frame.localTypes) <= slot {
+		frame.localTypes = append(frame.localTypes, "")
+	}
+	frame.localTypes[slot] = typeName
+}
+
+func (vm *VM) checkDeclaredType(typeName, name string, val *object.Object) error {
+	if typeName == "" || typeName == "Any" {
+		return nil
+	}
+	if typeMatches(typeName, val) {
+		return nil
+	}
+	return &eval.Error{
+		Kind:    "TypeError",
+		Message: fmt.Sprintf("variable %q expects %s, got %s", name, typeName, kindTypeName(val)),
+		Pos:     ast.Pos{Line: 1, Col: 1},
+	}
 }

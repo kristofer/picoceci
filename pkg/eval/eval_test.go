@@ -256,6 +256,20 @@ func TestEval_MultipleAssignments(t *testing.T) {
 	}
 }
 
+func TestEval_LetDeclTyped(t *testing.T) {
+	obj := evalSrc(t, "let x: Int. x := 42. x.")
+	if obj.Kind != object.KindSmallInt || obj.IVal != 42 {
+		t.Errorf("typed let: got %v, want 42", obj.PrintString())
+	}
+}
+
+func TestEval_LetDeclInferredLocksType(t *testing.T) {
+	obj := evalSrc(t, "let title := 'picoceci'. title.")
+	if obj.Kind != object.KindString || obj.SVal != "picoceci" {
+		t.Errorf("inferred let: got %v, want 'picoceci'", obj.PrintString())
+	}
+}
+
 // --- blocks -----------------------------------------------------------------
 
 func TestEval_BlockValue(t *testing.T) {
@@ -398,6 +412,13 @@ func TestEval_MessageNotUnderstood(t *testing.T) {
 
 func TestEval_UndefinedVariable(t *testing.T) {
 	err := evalErr(t, "undeclaredVar.")
+	if !strings.Contains(err.Error(), "UndefinedVariable") {
+		t.Errorf("expected UndefinedVariable, got %v", err)
+	}
+}
+
+func TestEval_AssignmentRequiresPriorDeclaration(t *testing.T) {
+	err := evalErr(t, "x := 1.")
 	if !strings.Contains(err.Error(), "UndefinedVariable") {
 		t.Errorf("expected UndefinedVariable, got %v", err)
 	}
@@ -680,6 +701,13 @@ func TestEval_TypedVar_TypeCheckPasses(t *testing.T) {
 func TestEval_TypedVar_TypeCheckFails(t *testing.T) {
 	// Assigning wrong type should raise TypeError
 	err := evalErr(t, "| x: Int | x := 'hello'.")
+	if !strings.Contains(err.Error(), "TypeError") {
+		t.Errorf("expected TypeError, got %v", err)
+	}
+}
+
+func TestEval_LetInferred_TypeCheckFails(t *testing.T) {
+	err := evalErr(t, "let x := 1. x := 'hello'.")
 	if !strings.Contains(err.Error(), "TypeError") {
 		t.Errorf("expected TypeError, got %v", err)
 	}

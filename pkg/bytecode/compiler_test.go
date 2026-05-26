@@ -171,6 +171,24 @@ func TestCompileVarDecl(t *testing.T) {
 	}
 }
 
+func TestCompileLetDecl(t *testing.T) {
+	chunk, err := compileSource("let x: Int. x := 42.")
+	if err != nil {
+		t.Fatalf("compile error: %v", err)
+	}
+
+	dis := chunk.Disassemble("test")
+	if !strings.Contains(dis, "SET_LOCAL_TYPE") || !strings.Contains(dis, "STORE_LOCAL") {
+		t.Errorf("expected local declaration opcodes in disassembly:\n%s", dis)
+	}
+}
+
+func TestCompileAssignmentRequiresDeclaration(t *testing.T) {
+	if _, err := compileSource("x := 42."); err == nil {
+		t.Fatal("expected compile error for assignment to undeclared variable")
+	}
+}
+
 func TestCompileLocalVariable(t *testing.T) {
 	chunk, err := compileSource("| x: Any | x := 42. x.")
 	if err != nil {

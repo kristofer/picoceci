@@ -27,6 +27,7 @@ func TestLexer_BasicTokens(t *testing.T) {
 		{"interface", lexer.INTERFACE, "interface"},
 		{"compose", lexer.COMPOSE, "compose"},
 		{"import", lexer.IMPORT, "import"},
+		{"let", lexer.LET, "let"},
 		{"Counter", lexer.IDENTIFIER, "Counter"},
 		{"at:", lexer.KEYWORD, "at:"},
 		{"ifTrue:", lexer.KEYWORD, "ifTrue:"},

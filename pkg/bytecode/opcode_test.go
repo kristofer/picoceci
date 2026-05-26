@@ -23,6 +23,10 @@ func TestOpCodeString(t *testing.T) {
 		{OpStoreInst, "STORE_INST"},
 		{OpPushGlobal, "PUSH_GLOBAL"},
 		{OpStoreGlobal, "STORE_GLOBAL"},
+		{OpSetLocalType, "SET_LOCAL_TYPE"},
+		{OpInferLocalType, "INFER_LOCAL_TYPE"},
+		{OpSetGlobalType, "SET_GLOBAL_TYPE"},
+		{OpInferGlobalType, "INFER_GLOBAL_TYPE"},
 		{OpSend, "SEND"},
 		{OpSuperSend, "SUPER_SEND"},
 		{OpClosure, "CLOSURE"},
@@ -71,6 +75,7 @@ func TestOperandWidths(t *testing.T) {
 		{OpStoreLocal, []int{1}},
 		{OpPushUpvalue, []int{1}},
 		{OpStoreUpvalue, []int{1}},
+		{OpInferLocalType, []int{1}},
 
 		// 2-byte operand
 		{OpPushConst, []int{2}},
@@ -83,6 +88,7 @@ func TestOperandWidths(t *testing.T) {
 		{OpJumpIfFalse, []int{2}},
 		{OpJumpIfTrue, []int{2}},
 		{OpMakeArray, []int{2}},
+		{OpInferGlobalType, []int{2}},
 
 		// 4-byte operand
 		{OpPushInt, []int{4}},
@@ -90,6 +96,8 @@ func TestOperandWidths(t *testing.T) {
 		// Multiple operands
 		{OpSend, []int{2, 1}},
 		{OpSuperSend, []int{2, 1}},
+		{OpSetLocalType, []int{1, 2}},
+		{OpSetGlobalType, []int{2, 2}},
 	}
 
 	for _, tt := range tests {
@@ -107,11 +115,15 @@ func TestInstructionLength(t *testing.T) {
 	}{
 		{OpPop, 1},
 		{OpPushNil, 1},
-		{OpPushLocal, 2},  // 1 + 1
-		{OpPushConst, 3},  // 1 + 2
-		{OpPushInt, 5},    // 1 + 4
-		{OpSend, 4},       // 1 + 2 + 1
-		{OpSuperSend, 4},  // 1 + 2 + 1
+		{OpPushLocal, 2}, // 1 + 1
+		{OpPushConst, 3}, // 1 + 2
+		{OpPushInt, 5},   // 1 + 4
+		{OpSetLocalType, 4},
+		{OpInferLocalType, 2},
+		{OpSetGlobalType, 5},
+		{OpInferGlobalType, 3},
+		{OpSend, 4},      // 1 + 2 + 1
+		{OpSuperSend, 4}, // 1 + 2 + 1
 	}
 
 	for _, tt := range tests {
