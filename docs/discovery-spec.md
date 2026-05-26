@@ -75,7 +75,7 @@ outgoing := NetworkChannel connectToName: 'telemetry-collector'.
 Proposed layering:
 
 - `NetworkChannel connectToName:` asks `Discovery lookup:` for endpoint records.
-- `Discovery` first checks local peer table, then one-or-more `NodeCache` services.
+- `Discovery` first checks local peer table, then one or more `NodeCache` services.
 - `NetworkChannel` remains transport-focused; Discovery owns naming and peer selection.
 
 ## Wire Protocol (v0 draft)
