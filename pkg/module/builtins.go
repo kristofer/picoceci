@@ -13,6 +13,21 @@ func RegisterBuiltins(r *Resolver) {
 
 	// collections - collection classes (stub for now)
 	r.RegisterBuiltin("collections", collectionsSource)
+
+	// task/tasksupervisor/timestamp/sdcard/wifi/led are runtime-backed globals.
+	// These modules exist so `import` succeeds and documents module boundaries.
+	r.RegisterBuiltin("task", taskSource)
+	r.RegisterBuiltin("tasksupervisor", taskSupervisorSource)
+	r.RegisterBuiltin("timestamp", timestampSource)
+	r.RegisterBuiltin("sdcard", sdcardSource)
+	r.RegisterBuiltin("wifi", wifiSource)
+	r.RegisterBuiltin("led", ledSource)
+
+	// hardware modules (stubs for now; full runtime objects in later phases)
+	r.RegisterBuiltin("gpio", gpioSource)
+	r.RegisterBuiltin("uart", uartSource)
+	r.RegisterBuiltin("i2c", i2cSource)
+	r.RegisterBuiltin("spi", spiSource)
 }
 
 // coreSource contains the picoceci source for the core module.
@@ -30,6 +45,14 @@ const ioSource = `
 " I/O module - input/output objects.
   Console and Transcript are provided by the runtime.
 "
+
+" ReadStream declaration (runtime behavior to be expanded in Phase 7+) "
+object ReadStream {
+}
+
+" WriteStream declaration (runtime behavior to be expanded in Phase 7+) "
+object WriteStream {
+}
 `
 
 // collectionsSource contains the picoceci source for the collections module.
@@ -65,5 +88,65 @@ object OrderedCollection {
 	do: aBlock [
 		items do: aBlock.
 	]
+}
+
+" Dictionary declaration "
+object Dictionary {
+}
+
+" Set declaration "
+object Set {
+}
+
+" Bag declaration "
+object Bag {
+}
+`
+
+const taskSource = `
+" Task module - runtime-backed Task/Queue/Channel objects are globals. "
+`
+
+const taskSupervisorSource = `
+" TaskSupervisor module - runtime-backed TaskSupervisor object is a global. "
+`
+
+const timestampSource = `
+" Timestamp module - runtime-backed Timestamp/Duration objects are globals. "
+`
+
+const sdcardSource = `
+" SDCard module - runtime-backed SDCard/File/Directory/Path objects are globals. "
+`
+
+const wifiSource = `
+" WiFi module - runtime-backed WiFi singleton object is a global. "
+`
+
+const ledSource = `
+" LED module - runtime-backed LED singleton object is a global. "
+`
+
+const gpioSource = `
+" GPIO module stub - hardware-backed implementation planned for embedded runtime. "
+object GPIO {
+}
+`
+
+const uartSource = `
+" UART module stub - hardware-backed implementation planned for embedded runtime. "
+object UART {
+}
+`
+
+const i2cSource = `
+" I2C module stub - hardware-backed implementation planned for embedded runtime. "
+object I2C {
+}
+`
+
+const spiSource = `
+" SPI module stub - hardware-backed implementation planned for embedded runtime. "
+object SPI {
 }
 `
