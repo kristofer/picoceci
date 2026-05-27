@@ -1,0 +1,85 @@
+"Module 04 — Command controller"
+"Demonstrates: full-duplex TCP, sequenced commands, ACK/REPLY handling, timeout"
+"Update NODE_IP below to the IP of 06_bidirectional_sensor.pc"
+
+let nodeName: String.
+nodeName := 'controller-01'.
+
+let nodeIP: String.
+nodeIP := '192.168.1.103'.   "TODO: update to bidirectional sensor's IP"
+
+let nodePort: Int.
+nodePort := 7001.
+
+"--- WiFi up ---"
+Wifi connectSSID: 'ship-net' password: 'hunter2'.
+[ Wifi status = #connected ] whileFalse: [ Duration ms: 200 ].
+Console println: nodeName, ' online: ', Wifi ipAddress.
+LED blinkEvery: 1000.
+
+"--- Sequenced command state ---"
+let seq: Int.
+seq := 0.
+
+let pendingReplies: Dictionary.
+pendingReplies := Dictionary new.
+let pendingMutex: Semaphore.
+pendingMutex := Semaphore mutex.
+
+"--- Send one command and wait for reply ---"
+sendCommand: cmd arg: arg onCh: ch [
+    seq := seq + 1.
+    let thisSeq: Int.
+    thisSeq := seq.
+
+    let line: String.
+    (arg notNil & (arg size > 0))
+        ifTrue: [ line := 'CMD:', thisSeq printString, ':', cmd, ':', arg ]
+        ifFalse: [ line := 'CMD:', thisSeq printString, ':', cmd ].
+
+    Console println: 'send -> ', line.
+    ch send: (line, String nl) asByteArray.
+    ^thisSeq
+]
+
+"--- Connect and drive the command session ---"
+TaskSupervisor supervise: [
+    let ch: Any.
+    ch := NetworkChannel connectTo: nodeIP port: nodePort.
+    Console println: 'connected to ', nodeIP.
+
+    "Receive-loop task: reads all replies coming back"
+    Task spawn: [
+        [
+            [ true ] whileTrue: [
+                let reply: String.
+                reply := ch receive asString trimSeparators.
+                (reply size = 0) ifTrue: [ ^nil ].
+                Console println: 'recv <- ', reply.
+            ]
+        ] on: Error do: [ :e |
+            Console println: 'recv error: ', e message.
+        ].
+    ] name: 'reply-reader'.
+
+    "Command sequence: query reading, change rate, calibrate, then poll every 3s"
+    Duration ms: 500.
+
+    sendCommand: 'get-reading' arg: '' onCh: ch.
+    Duration ms: 1000.
+
+    sendCommand: 'set-rate' arg: '3000' onCh: ch.
+    Duration ms: 1000.
+
+    sendCommand: 'calibrate' arg: '' onCh: ch.
+    Duration ms: 2000.
+
+    "Periodic poll"
+    [ true ] whileTrue: [
+        sendCommand: 'get-reading' arg: '' onCh: ch.
+        Duration ms: 3000.
+    ].
+
+] name: 'cmd-session'.
+
+[ true ] whileTrue: [ Duration ms: 5000 ].

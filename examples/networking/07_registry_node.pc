@@ -1,0 +1,162 @@
+"Module 05 — Registry node"
+"Demonstrates: name-to-address registry, TTL, heartbeat, QUERY, LIST"
+"Flash this first — it must be running before any other node boots."
+"This node's IP is the ONE hard-coded address in the system."
+
+let nodeName: String.
+nodeName := 'registry-01'.
+
+"--- WiFi up ---"
+Wifi connectSSID: 'ship-net' password: 'hunter2'.
+[ Wifi status = #connected ] whileFalse: [ Duration ms: 200 ].
+Console println: nodeName, ' online: ', Wifi ipAddress.
+Console println: 'Registry ready on port 7000'.
+LED blinkEvery: 1000.
+
+"--- Registry data structures ---"
+object RegistryEntry {
+    let entryName: String.
+    let ip: String.
+    let port: Int.
+    let lastSeen: Int.
+
+    isExpired [
+        ^(Timestamp now ms - lastSeen) > 30000
+    ]
+
+    refresh [
+        lastSeen := Timestamp now ms.
+    ]
+
+    addrString [
+        ^ip , ':', port printString
+    ]
+
+    summary [
+        ^entryName , '=' , self addrString
+    ]
+}
+
+let entries: Dictionary.
+entries := Dictionary new.
+let registryMutex: Semaphore.
+registryMutex := Semaphore mutex.
+
+"--- Prune expired entries every 10 seconds ---"
+Timer every: 10000 do: [
+    let toRemove: OrderedCollection.
+    toRemove := OrderedCollection new.
+    registryMutex critical: [
+        entries do: [ :e |
+            e isExpired ifTrue: [
+                Console println: 'expired: ', e entryName.
+                toRemove add: e entryName.
+            ].
+        ].
+        toRemove do: [ :n | entries removeKey: n ifAbsent: [] ].
+    ].
+].
+
+"--- Session handler ---"
+handleRegistrySession: session clientIP: clientIP [
+    [ true ] whileTrue: [
+        let raw: String.
+        raw := session receive asString trimSeparators.
+        (raw size = 0) ifTrue: [ ^nil ].
+
+        "REGISTER:name:port"
+        (raw startsWith: 'REGISTER:') ifTrue: [
+            let body: String.
+            body := raw copyFrom: 10 to: raw size.
+            let colonPos: Int.
+            colonPos := 0.
+            let i: Int.
+            i := 1.
+            [ (i <= body size) & (colonPos = 0) ] whileTrue: [
+                ((body at: i) = $:) ifTrue: [ colonPos := i ].
+                i := i + 1.
+            ].
+            (colonPos > 0) ifTrue: [
+                let regName: String.
+                regName := body copyFrom: 1 to: colonPos - 1.
+                let portStr: String.
+                portStr := body copyFrom: colonPos + 1 to: body size.
+                let e: RegistryEntry.
+                e := RegistryEntry new.
+                e entryName := regName.
+                e ip := clientIP.
+                e port := portStr asInteger.
+                e lastSeen := Timestamp now ms.
+                registryMutex critical: [ entries at: regName put: e ].
+                session send: ('ACK:ok', String nl) asByteArray.
+                Console println: 'registered: ', e summary.
+            ] ifFalse: [
+                session send: ('ACK:err:bad format', String nl) asByteArray.
+            ].
+        ].
+
+        "HEARTBEAT:name"
+        (raw startsWith: 'HEARTBEAT:') ifTrue: [
+            let hbName: String.
+            hbName := raw copyFrom: 11 to: raw size.
+            registryMutex critical: [
+                let e: Any.
+                e := entries at: hbName ifAbsent: [ nil ].
+                e notNil ifTrue: [ e refresh ].
+            ].
+        ].
+
+        "QUERY:name"
+        (raw startsWith: 'QUERY:') ifTrue: [
+            let qName: String.
+            qName := raw copyFrom: 7 to: raw size.
+            let found: Any.
+            registryMutex critical: [
+                found := entries at: qName ifAbsent: [ nil ].
+            ].
+            (found isNil | found isExpired)
+                ifTrue:  [ session send: ('NOTFOUND', String nl) asByteArray. ]
+                ifFalse: [ session send: ('ADDR:', found addrString, String nl) asByteArray. ].
+        ].
+
+        "LIST — all current entries"
+        (raw = 'LIST') ifTrue: [
+            registryMutex critical: [
+                entries do: [ :e |
+                    session send: ('ENTRY:', e summary, String nl) asByteArray.
+                ].
+            ].
+            session send: ('END', String nl) asByteArray.
+        ].
+
+        "BYE:name"
+        (raw startsWith: 'BYE:') ifTrue: [
+            let byeName: String.
+            byeName := raw copyFrom: 5 to: raw size.
+            registryMutex critical: [ entries removeKey: byeName ifAbsent: [] ].
+            Console println: 'deregistered: ', byeName.
+            ^nil
+        ].
+    ].
+]
+
+"--- TCP listener on port 7000 ---"
+Wifi listenOn: 7000 do: [ :session |
+    Task spawn: [
+        let clientIP: String.
+        clientIP := session remoteAddress ifNil: [ 'unknown' ].
+        [
+            handleRegistrySession: session clientIP: clientIP.
+        ] on: Error do: [ :e |
+            Console println: 'client error (', clientIP, '): ', e message.
+        ].
+        session close.
+    ] name: 'registry-client'.
+].
+
+"--- REPL ---"
+Wifi listenOn: 2323 do: [ :session |
+    Task spawn: [ PicoceciREPL serve: session ] name: 'tcp-repl'.
+].
+
+[ true ] whileTrue: [ Duration ms: 5000 ].

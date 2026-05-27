@@ -1,0 +1,66 @@
+"Module 03 — Spoke node (star topology sensor)"
+"Demonstrates: client-side push with reconnect, HELLO handshake, BYE on clean exit"
+"Update HUB_IP below to the IP printed by 05_hub_node.pc"
+"Flash this on each sensor board."
+
+let nodeName: String.
+nodeName := 'spoke-01'.    "change per board: spoke-02, spoke-03, etc."
+
+let hubIP: String.
+hubIP := '192.168.1.101'.  "TODO: update to hub node's IP"
+
+let hubPort: Int.
+hubPort := 7001.
+
+"--- WiFi up ---"
+Wifi connectSSID: 'ship-net' password: 'hunter2'.
+[ Wifi status = #connected ] whileFalse: [ Duration ms: 200 ].
+Console println: nodeName, ' online: ', Wifi ipAddress.
+LED blinkEvery: 1000.
+
+"--- Simulated sensor ---"
+let temperature: Float.
+temperature := 18.0.
+let sampleTick: Int.
+sampleTick := 0.
+
+Task spawn: [
+    [ true ] whileTrue: [
+        sampleTick := sampleTick + 1.
+        temperature := 18.0 + (sampleTick \\ 15) asFloat.   "cycles 18..32"
+        Duration ms: 1000.
+    ]
+] name: 'sensor-loop'.
+
+"--- Push loop with reconnection ---"
+[ true ] whileTrue: [
+    [
+        let ch: Any.
+        ch := NetworkChannel connectTo: hubIP port: hubPort.
+        Console println: nodeName, ' connected to hub at ', hubIP.
+
+        "Handshake: announce our identity"
+        ch send: ('HELLO:', nodeName, String nl) asByteArray.
+
+        [
+            [ true ] whileTrue: [
+                let reading: String.
+                reading := 'READING:', nodeName, ':', temperature printString.
+                ch send: (reading, String nl) asByteArray.
+                Console println: 'sent: ', reading.
+                LED toggle.
+                Duration ms: 2000.
+            ]
+        ] on: Error do: [ :e |
+            Console println: 'send failed: ', e message.
+        ].
+
+        "Graceful disconnect"
+        ch send: ('BYE:', nodeName, String nl) asByteArray.
+        ch close.
+
+    ] on: Error do: [ :e |
+        Console println: 'hub unreachable: ', e message, ' — retry in 5s'.
+        Duration ms: 5000.
+    ].
+].

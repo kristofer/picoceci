@@ -1,0 +1,54 @@
+"Module 02 — Ping sender (client side)"
+"Demonstrates: NetworkChannel TCP client, reconnection, round-trip timing"
+"Update RECEIVER_IP below to the IP printed by 04_pong_receiver.pc"
+
+let nodeName: String.
+nodeName := 'ping-01'.
+
+let receiverIP: String.
+receiverIP := '192.168.1.102'.    "TODO: update to pong receiver's IP"
+
+let receiverPort: Int.
+receiverPort := 7001.
+
+"--- WiFi up ---"
+Wifi connectSSID: 'ship-net' password: 'hunter2'.
+[ Wifi status = #connected ] whileFalse: [ Duration ms: 200 ].
+Console println: nodeName, ' online: ', Wifi ipAddress.
+LED blinkEvery: 1000.
+
+"--- Ping loop with reconnection ---"
+let seq: Int.
+seq := 0.
+let rtt: Int.
+rtt := 0.
+
+[ true ] whileTrue: [
+    [
+        let ch: Any.
+        ch := NetworkChannel connectTo: receiverIP port: receiverPort.
+        Console println: 'connected to ', receiverIP.
+
+        [ true ] whileTrue: [
+            seq := seq + 1.
+            let sent: Int.
+            sent := Timestamp now ms.
+            ch send: ('PING:', seq printString, String nl) asByteArray.
+
+            let reply: String.
+            reply := ch receive asString trimSeparators.
+            rtt := Timestamp now ms - sent.
+
+            (reply startsWith: 'PONG:') ifTrue: [
+                Console println: 'PONG:', seq printString, '  rtt=', rtt printString, 'ms'.
+                LED toggle.
+            ] ifFalse: [
+                Console println: 'unexpected reply: ', reply.
+            ].
+            Duration ms: 1000.
+        ].
+    ] on: Error do: [ :e |
+        Console println: 'connection failed: ', e message, ' — retrying in 5s'.
+        Duration ms: 5000.
+    ].
+].

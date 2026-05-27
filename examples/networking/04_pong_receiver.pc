@@ -1,0 +1,45 @@
+"Module 02 — Pong receiver (server side)"
+"Demonstrates: verify a link before building real sensor/collector pair"
+"Flash this first. Run 04_ping_sender.pc on the other board."
+"The receiver replies PONG:n for every PING:n it receives."
+
+let nodeName: String.
+nodeName := 'pong-01'.
+
+"--- WiFi up ---"
+Wifi connectSSID: 'ship-net' password: 'hunter2'.
+[ Wifi status = #connected ] whileFalse: [ Duration ms: 200 ].
+Console println: nodeName, ' online: ', Wifi ipAddress.
+Console println: 'Listening for pings on port 7001'.
+LED blinkEvery: 1000.
+
+let pongCount: Int.
+pongCount := 0.
+
+Wifi listenOn: 7001 do: [ :session |
+    Task spawn: [
+        Console println: 'ping-sender connected'.
+        [
+            [ true ] whileTrue: [
+                let msg: String.
+                msg := session receive asString trimSeparators.
+                (msg size = 0) ifTrue: [ ^nil ].
+                (msg startsWith: 'PING:') ifTrue: [
+                    let seq: String.
+                    seq := msg copyFrom: 6 to: msg size.
+                    session send: ('PONG:', seq, String nl) asByteArray.
+                    pongCount := pongCount + 1.
+                    Console println: 'PONG:', seq, '  (total: ', pongCount printString, ')'.
+                    LED toggle.
+                ] ifFalse: [
+                    Console println: 'unexpected: ', msg.
+                ].
+            ]
+        ] on: Error do: [ :e |
+            Console println: 'session lost: ', e message.
+        ].
+        session close.
+    ] name: 'ping-handler'.
+].
+
+[ true ] whileTrue: [ Duration ms: 5000 ].

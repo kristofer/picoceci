@@ -1,0 +1,134 @@
+"Module 03 — Hub node (star topology center)"
+"Demonstrates: concurrent sessions, fan-in queue, per-spoke stats, aggregation"
+"Flash this first. Run 05_spoke_node.pc on each sensor board."
+
+let nodeName: String.
+nodeName := 'hub-01'.
+
+"--- WiFi up ---"
+Wifi connectSSID: 'ship-net' password: 'hunter2'.
+[ Wifi status = #connected ] whileFalse: [ Duration ms: 200 ].
+Console println: nodeName, ' online: ', Wifi ipAddress.
+LED blinkEvery: 1000.
+
+"--- Spoke tracking ---"
+object SpokeStats {
+    let id: String.
+    let count: Int.
+    let total: Float.
+    let lastSeen: Int.
+
+    init [ count := 0. total := 0.0. lastSeen := 0. ]
+
+    addReading: value [
+        count := count + 1.
+        total := total + value.
+        lastSeen := Timestamp now ms.
+        ^self
+    ]
+
+    average [
+        (count = 0) ifTrue: [ ^0.0 ].
+        ^total / count asFloat
+    ]
+
+    summary [
+        ^id , ': readings=', count printString,
+         ' avg=', self average printString,
+         ' lastSeen=', lastSeen printString
+    ]
+}
+
+let stats: Dictionary.
+stats := Dictionary new.
+let statsMutex: Semaphore.
+statsMutex := Semaphore mutex.
+
+"--- Fan-in queue: all spokes push here ---"
+let inbound: Queue.
+inbound := Queue new: 128.
+
+"--- Aggregator task ---"
+Task spawn: [
+    [ true ] whileTrue: [
+        let line: String.
+        line := inbound receive.
+
+        "Expected format: READING:spokeId:value"
+        (line startsWith: 'READING:') ifTrue: [
+            let body: String.
+            body := line copyFrom: 9 to: line size.
+            "Parse spokeId and value — find second colon"
+            let colonPos: Int.
+            colonPos := 0.
+            let i: Int.
+            i := 1.
+            [ (i <= body size) & (colonPos = 0) ] whileTrue: [
+                ((body at: i) = $:) ifTrue: [ colonPos := i ].
+                i := i + 1.
+            ].
+            (colonPos > 0) ifTrue: [
+                let spokeId: String.
+                spokeId := body copyFrom: 1 to: colonPos - 1.
+                let valueStr: String.
+                valueStr := body copyFrom: colonPos + 1 to: body size.
+                let value: Float.
+                value := valueStr asFloat.
+
+                let entry: Any.
+                statsMutex critical: [
+                    entry := stats at: spokeId ifAbsent: [ nil ].
+                    entry isNil ifTrue: [
+                        let s: SpokeStats.
+                        s := SpokeStats new.
+                        s id := spokeId.
+                        stats at: spokeId put: s.
+                        entry := s.
+                    ].
+                ].
+                entry addReading: value.
+                Console println: 'hub: ', entry summary.
+            ].
+        ].
+
+        (line startsWith: 'HELLO:') ifTrue: [
+            Console println: 'spoke joined: ', (line copyFrom: 7 to: line size).
+        ].
+
+        (line startsWith: 'BYE:') ifTrue: [
+            Console println: 'spoke left: ', (line copyFrom: 5 to: line size).
+        ].
+    ]
+] name: 'aggregator'.
+
+"--- TCP listener: one Task per spoke ---"
+Wifi listenOn: 7001 do: [ :session |
+    Task spawn: [
+        let spokeId: String.
+        spokeId := 'unknown'.
+        [
+            [ true ] whileTrue: [
+                let raw: String.
+                raw := session receive asString trimSeparators.
+                (raw size = 0) ifTrue: [
+                    inbound send: 'BYE:', spokeId.
+                    ^nil
+                ].
+                (raw startsWith: 'HELLO:') ifTrue: [
+                    spokeId := raw copyFrom: 7 to: raw size.
+                ].
+                inbound send: raw.
+            ]
+        ] on: Error do: [ :e |
+            Console println: 'spoke error (', spokeId, '): ', e message.
+        ].
+        session close.
+    ] name: 'spoke-handler'.
+].
+
+"--- REPL for inspection ---"
+Wifi listenOn: 2323 do: [ :session |
+    Task spawn: [ PicoceciREPL serve: session ] name: 'tcp-repl'.
+].
+
+[ true ] whileTrue: [ Duration ms: 5000 ].

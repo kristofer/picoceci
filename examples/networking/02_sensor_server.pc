@@ -1,0 +1,63 @@
+"Module 01 — Sensor server"
+"Demonstrates: TCP listener, per-session Task, simulated sensor, REPL on port 2323"
+"One node runs this. Connect with: nc <IP> 7001"
+
+let nodeName: String.
+nodeName := 'sensor-01'.
+
+"--- WiFi up ---"
+Wifi connectSSID: 'ship-net' password: 'hunter2'.
+[ Wifi status = #connected ] whileFalse: [ Duration ms: 200 ].
+Console println: nodeName, ' online: ', Wifi ipAddress.
+LED blinkEvery: 1000.
+
+"--- Shared sensor state ---"
+let temperature: Float.
+temperature := 20.0.
+
+let clientCount: Int.
+clientCount := 0.
+
+"--- Simulated sensor loop ---"
+"On real hardware, replace this with an I2C or ADC read."
+Task spawn: [
+    let tick: Int.
+    tick := 0.
+    [ true ] whileTrue: [
+        tick := tick + 1.
+        temperature := 20.0 + (tick \\ 10) asFloat.   "cycles 20..29"
+        Duration ms: 1000.
+    ]
+] name: 'sensor-loop'.
+
+"--- Sensor server on port 7001 ---"
+"Each client receives a READING: line every 2 seconds."
+Wifi listenOn: 7001 do: [ :session |
+    clientCount := clientCount + 1.
+    let myId: Int.
+    myId := clientCount.
+    Console println: 'client ', myId printString, ' connected'.
+    Task spawn: [
+        [
+            [ true ] whileTrue: [
+                let line: String.
+                line := 'READING:', temperature printString.
+                session send: (line, String nl) asByteArray.
+                Duration ms: 2000.
+            ]
+        ] on: Error do: [ :e |
+            Console println: 'client ', myId printString, ' dropped: ', e message.
+        ].
+        session close.
+    ] name: 'sensor-client-', myId printString.
+].
+
+"--- REPL on port 2323 ---"
+"Connect with nc <IP> 2323 for live inspection."
+Wifi listenOn: 2323 do: [ :session |
+    Task spawn: [
+        PicoceciREPL serve: session
+    ] name: 'tcp-repl'.
+].
+
+[ true ] whileTrue: [ Duration ms: 5000 ].

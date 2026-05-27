@@ -1,0 +1,160 @@
+"Module 05 — Registered node (uses registry for peer discovery)"
+"Demonstrates: self-registration, heartbeat task, lookup helper, local addr cache"
+"Update REGISTRY_IP and MY_NAME below. Flash after 07_registry_node.pc is running."
+
+let nodeName: String.
+nodeName := 'sensor-beta'.      "unique name for this node"
+
+let myServicePort: Int.
+myServicePort := 7001.
+
+let registryIP: String.
+registryIP := '192.168.1.100'.  "TODO: update to registry node's IP"
+
+let registryPort: Int.
+registryPort := 7000.
+
+"--- WiFi up ---"
+Wifi connectSSID: 'ship-net' password: 'hunter2'.
+[ Wifi status = #connected ] whileFalse: [ Duration ms: 200 ].
+Console println: nodeName, ' online: ', Wifi ipAddress.
+LED blinkEvery: 1000.
+
+"--- Local address cache (avoids repeated registry queries) ---"
+let addrCache: Dictionary.
+addrCache := Dictionary new.
+let cacheExpiryMs: Int.
+cacheExpiryMs := 60000.
+let cacheTimestamps: Dictionary.
+cacheTimestamps := Dictionary new.
+
+lookupNode: name [
+    "Check local cache first"
+    let cached: Any.
+    cached := addrCache at: name ifAbsent: [ nil ].
+    (cached notNil) ifTrue: [
+        let age: Int.
+        age := Timestamp now ms - (cacheTimestamps at: name ifAbsent: [ 0 ]).
+        (age < cacheExpiryMs) ifTrue: [ ^cached ].
+    ].
+    "Query registry"
+    [
+        let ch: Any.
+        ch := NetworkChannel connectTo: registryIP port: registryPort.
+        ch send: ('QUERY:', name, String nl) asByteArray.
+        let reply: String.
+        reply := ch receive asString trimSeparators.
+        ch close.
+        (reply startsWith: 'ADDR:') ifTrue: [
+            let addr: String.
+            addr := reply copyFrom: 6 to: reply size.
+            addrCache at: name put: addr.
+            cacheTimestamps at: name put: Timestamp now ms.
+            ^addr
+        ].
+    ] on: Error do: [ :e |
+        Console println: 'registry unreachable: ', e message.
+    ].
+    ^nil
+]
+
+"--- Register with registry ---"
+registerSelf [
+    [
+        let ch: Any.
+        ch := NetworkChannel connectTo: registryIP port: registryPort.
+        ch send: ('REGISTER:', nodeName, ':', myServicePort printString, String nl) asByteArray.
+        let ack: String.
+        ack := ch receive asString trimSeparators.
+        ch close.
+        Console println: 'registry: ', ack.
+    ] on: Error do: [ :e |
+        Console println: 'registration failed: ', e message.
+    ].
+]
+
+registerSelf.
+
+"--- Heartbeat to registry every 10 seconds ---"
+Task spawn: [
+    [ true ] whileTrue: [
+        Duration ms: 10000.
+        [
+            let ch: Any.
+            ch := NetworkChannel connectTo: registryIP port: registryPort.
+            ch send: ('HEARTBEAT:', nodeName, String nl) asByteArray.
+            ch close.
+        ] on: Error do: [ :e |
+            Console println: 'heartbeat failed: ', e message.
+            registerSelf.   "re-register if heartbeat fails (registry may have restarted)"
+        ].
+    ]
+] name: 'registry-heartbeat'.
+
+"--- Simulated sensor ---"
+let temperature: Float.
+temperature := 21.0.
+let tick: Int.
+tick := 0.
+
+Task spawn: [
+    [ true ] whileTrue: [
+        tick := tick + 1.
+        temperature := 21.0 + (tick \\ 8) asFloat.
+        Duration ms: 2000.
+    ]
+] name: 'sensor-loop'.
+
+"--- Send data to collector (looked up by name, not hard-coded IP) ---"
+Task spawn: [
+    [ true ] whileTrue: [
+        let collectorAddr: Any.
+        collectorAddr := lookupNode: 'collector'.
+        collectorAddr notNil ifTrue: [
+            [
+                let parts: Array.
+                "Parse IP:port"
+                let colonPos: Int.
+                colonPos := 0.
+                let i: Int.
+                i := 1.
+                [ (i <= collectorAddr size) & (colonPos = 0) ] whileTrue: [
+                    ((collectorAddr at: i) = $:) ifTrue: [ colonPos := i ].
+                    i := i + 1.
+                ].
+                let collIP: String.
+                let collPort: Int.
+                collIP := collectorAddr copyFrom: 1 to: colonPos - 1.
+                collPort := (collectorAddr copyFrom: colonPos + 1 to: collectorAddr size) asInteger.
+
+                let ch: Any.
+                ch := NetworkChannel connectTo: collIP port: collPort.
+                ch send: ('HELLO:', nodeName, String nl) asByteArray.
+                ch send: ('READING:', nodeName, ':', temperature printString, String nl) asByteArray.
+                ch close.
+                Console println: 'sent reading to collector'.
+            ] on: Error do: [ :e |
+                Console println: 'send failed: ', e message.
+                addrCache removeKey: 'collector' ifAbsent: [].   "invalidate cache"
+            ].
+        ] ifFalse: [
+            Console println: 'collector not found in registry — will retry'.
+        ].
+        Duration ms: 5000.
+    ]
+] name: 'send-loop'.
+
+"--- Local sensor service on myServicePort ---"
+Wifi listenOn: myServicePort do: [ :session |
+    Task spawn: [
+        session send: ('READING:', temperature printString, String nl) asByteArray.
+        session close.
+    ] name: 'sensor-serve'.
+].
+
+"--- REPL ---"
+Wifi listenOn: 2323 do: [ :session |
+    Task spawn: [ PicoceciREPL serve: session ] name: 'tcp-repl'.
+].
+
+[ true ] whileTrue: [ Duration ms: 5000 ].

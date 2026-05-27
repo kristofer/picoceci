@@ -1,0 +1,344 @@
+"Module 07 — Full mesh node"
+"Demonstrates: routing table, gossip, store-and-forward, fault detection via PING"
+"Every board runs this same program. Change MY_NAME and SEEDS per board."
+"
+"  Board 1: MY_NAME='node-a'  SEEDS = ['<board2-ip>:7001', '<board3-ip>:7001']
+"  Board 2: MY_NAME='node-b'  SEEDS = ['<board1-ip>:7001', '<board4-ip>:7001']
+"  ... and so on for each board in the mesh.
+"
+
+let myName: String.
+myName := 'node-a'.          "CHANGE PER BOARD"
+
+let myPort: Int.
+myPort := 7001.
+
+"Seed neighbors — at least one known address to bootstrap the mesh."
+"Only the seed IPs are hard-coded; the rest of the topology is learned via gossip."
+let seeds: OrderedCollection.
+seeds := OrderedCollection new.
+seeds add: '192.168.1.102:7001'.   "CHANGE PER BOARD"
+seeds add: '192.168.1.103:7001'.   "CHANGE PER BOARD"
+
+"--- WiFi up ---"
+Wifi connectSSID: 'ship-net' password: 'hunter2'.
+[ Wifi status = #connected ] whileFalse: [ Duration ms: 200 ].
+Console println: myName, ' online: ', Wifi ipAddress.
+LED blinkEvery: 1000.
+
+"--- Routing table ---"
+object RouteEntry {
+    let dest: String.
+    let nexthop: String.
+    let hops: Int.
+    let lastSeen: Int.
+
+    isExpired [ ^(Timestamp now ms - lastSeen) > 30000 ]
+    touch     [ lastSeen := Timestamp now ms. ]
+}
+
+let routes: Dictionary.
+routes := Dictionary new.
+let routesMutex: Semaphore.
+routesMutex := Semaphore mutex.
+
+addRoute: dest nexthop: nexthop hops: hops [
+    routesMutex critical: [
+        let existing: Any.
+        existing := routes at: dest ifAbsent: [ nil ].
+        (existing isNil | (existing hops > hops)) ifTrue: [
+            let e: RouteEntry.
+            e := RouteEntry new.
+            e dest := dest.
+            e nexthop := nexthop.
+            e hops := hops.
+            e lastSeen := Timestamp now ms.
+            routes at: dest put: e.
+        ] ifFalse: [
+            existing touch.
+        ].
+    ].
+]
+
+lookupRoute: dest [
+    let e: Any.
+    routesMutex critical: [ e := routes at: dest ifAbsent: [ nil ] ].
+    (e isNil | e isExpired) ifTrue: [ ^nil ].
+    ^e
+]
+
+buildGossipLine [
+    let parts: OrderedCollection.
+    parts := OrderedCollection new.
+    routesMutex critical: [
+        routes do: [ :e |
+            e isExpired ifFalse: [
+                parts add: e dest , ':' , e nexthop , ':' , e hops printString.
+            ].
+        ].
+    ].
+    "ROUTE:dest:nexthop:hops,dest:nexthop:hops,..."
+    let csv: String.
+    csv := ''.
+    let first: Bool.
+    first := true.
+    parts do: [ :part |
+        first ifFalse: [ csv := csv , ',' ].
+        csv := csv , part.
+        first := false.
+    ].
+    ^'ROUTE:', csv
+]
+
+mergeGossip: line fromNeighbor: neighborAddr [
+    "line = ROUTE:dest:nexthop:hops,..."
+    (line size < 7) ifTrue: [ ^nil ].
+    let csv: String.
+    csv := line copyFrom: 7 to: line size.
+    "Split by comma and process each entry"
+    "Simplified: iterate character by character"
+    let segment: String.
+    segment := ''.
+    let i: Int.
+    i := 1.
+    [ i <= (csv size + 1) ] whileTrue: [
+        let done: Bool.
+        done := (i > csv size).
+        let ch: Char.
+        (done not) ifTrue: [ ch := csv at: i ].
+        (done | (ch = $,)) ifTrue: [
+            (segment size > 0) ifTrue: [
+                "Parse dest:nexthop:hops"
+                let c1: Int. let c2: Int.
+                c1 := 0. c2 := 0.
+                let j: Int. j := 1.
+                [ (j <= segment size) & (c2 = 0) ] whileTrue: [
+                    ((segment at: j) = $:) ifTrue: [
+                        (c1 = 0)
+                            ifTrue: [ c1 := j ]
+                            ifFalse: [ (c2 = 0) ifTrue: [ c2 := j ] ].
+                    ].
+                    j := j + 1.
+                ].
+                (c1 > 0 & c2 > 0) ifTrue: [
+                    let entryDest: String.
+                    entryDest := segment copyFrom: 1 to: c1 - 1.
+                    let entryNexthop: String.
+                    entryNexthop := segment copyFrom: c1 + 1 to: c2 - 1.
+                    let entryHops: Int.
+                    entryHops := (segment copyFrom: c2 + 1 to: segment size) asInteger.
+                    "Add 1 hop since we are one step further"
+                    (entryDest = myName) ifFalse: [
+                        addRoute: entryDest nexthop: neighborAddr hops: entryHops + 1.
+                    ].
+                ].
+            ].
+            segment := ''.
+        ] ifFalse: [
+            segment := segment , (String with: ch).
+        ].
+        i := i + 1.
+    ].
+]
+
+"--- Active neighbor sessions (nexthop addr -> session) ---"
+let neighbors: Dictionary.
+neighbors := Dictionary new.
+let neighborsMutex: Semaphore.
+neighborsMutex := Semaphore mutex.
+
+registerNeighbor: name addr: addr session: session [
+    neighborsMutex critical: [ neighbors at: addr put: session ].
+    addRoute: name nexthop: addr hops: 1.
+    Console println: 'neighbor up: ', name, ' at ', addr.
+]
+
+removeNeighbor: addr [
+    neighborsMutex critical: [ neighbors removeKey: addr ifAbsent: [] ].
+    "Remove direct route; gossip will converge remaining routes"
+    routesMutex critical: [
+        let toRemove: OrderedCollection.
+        toRemove := OrderedCollection new.
+        routes do: [ :e | (e nexthop = addr) ifTrue: [ toRemove add: e dest ] ].
+        toRemove do: [ :d | routes removeKey: d ifAbsent: [] ].
+    ].
+    Console println: 'neighbor down: ', addr.
+]
+
+"--- Dispatch a received MSG ---"
+dispatchMessage: line [
+    "MSG:dest:src:payload"
+    (line size < 5) ifTrue: [ ^nil ].
+    let body: String.
+    body := line copyFrom: 5 to: line size.
+    let c1: Int. c1 := 0.
+    let c2: Int. c2 := 0.
+    let i: Int. i := 1.
+    [ (i <= body size) & (c2 = 0) ] whileTrue: [
+        ((body at: i) = $:) ifTrue: [
+            (c1 = 0) ifTrue: [ c1 := i ] ifFalse: [ c2 := i ].
+        ].
+        i := i + 1.
+    ].
+    (c1 = 0 | c2 = 0) ifTrue: [ ^nil ].
+    let dest: String.
+    dest := body copyFrom: 1 to: c1 - 1.
+    let src: String.
+    src := body copyFrom: c1 + 1 to: c2 - 1.
+    let payload: String.
+    payload := body copyFrom: c2 + 1 to: body size.
+
+    (dest = myName) ifTrue: [
+        Console println: 'MSG from ', src, ': ', payload.
+        LED toggle.
+        ^nil
+    ].
+
+    "Forward to nexthop"
+    let route: Any.
+    route := lookupRoute: dest.
+    route isNil ifTrue: [
+        Console println: 'no route to ', dest, ' — dropping MSG from ', src.
+        ^nil
+    ].
+    let fwdSession: Any.
+    neighborsMutex critical: [
+        fwdSession := neighbors at: route nexthop ifAbsent: [ nil ].
+    ].
+    fwdSession notNil ifTrue: [
+        fwdSession send: (line, String nl) asByteArray.
+        Console println: 'forwarded MSG to ', dest, ' via ', route nexthop.
+    ] ifFalse: [
+        Console println: 'nexthop session gone for ', dest, ' — dropping'.
+        removeNeighbor: route nexthop.
+    ].
+]
+
+"--- Send a mesh message to any named destination ---"
+sendMessage: payload to: dest [
+    let line: String.
+    line := 'MSG:', dest, ':', myName, ':', payload.
+    (dest = myName) ifTrue: [ Console println: 'MSG to self: ', payload. ^nil ].
+    let route: Any.
+    route := lookupRoute: dest.
+    route isNil ifTrue: [
+        Console println: 'no route to ', dest.
+        ^nil
+    ].
+    let session: Any.
+    neighborsMutex critical: [
+        session := neighbors at: route nexthop ifAbsent: [ nil ].
+    ].
+    session notNil ifTrue: [
+        session send: (line, String nl) asByteArray.
+    ] ifFalse: [
+        Console println: 'no live session to ', route nexthop.
+    ].
+]
+
+"--- Handle a neighbor session (used for both inbound and outbound connections) ---"
+handleNeighborSession: session neighborAddr: addr [
+    let running: Bool.
+    running := true.
+    [ running ] whileTrue: [
+        let raw: String.
+        raw := session receive asString trimSeparators.
+        (raw size = 0) ifTrue: [ running := false ] ifFalse: [
+            (raw startsWith: 'HELLO:') ifTrue: [
+                let neighborName: String.
+                neighborName := raw copyFrom: 7 to: raw size.
+                registerNeighbor: neighborName addr: addr session: session.
+                session send: ('HELLO:', myName, String nl) asByteArray.
+                session send: (buildGossipLine, String nl) asByteArray.
+            ].
+            (raw startsWith: 'ROUTE:') ifTrue: [
+                mergeGossip: raw fromNeighbor: addr.
+            ].
+            (raw startsWith: 'MSG:') ifTrue: [
+                dispatchMessage: raw.
+            ].
+            (raw startsWith: 'PING:') ifTrue: [
+                let seq: String.
+                seq := raw copyFrom: 6 to: raw size.
+                session send: ('PONG:', seq, String nl) asByteArray.
+            ].
+            (raw startsWith: 'BYE:') ifTrue: [ running := false ].
+        ].
+    ].
+    removeNeighbor: addr.
+    session close.
+]
+
+"--- Connect to seed neighbors ---"
+seeds do: [ :seedAddr |
+    TaskSupervisor supervise: [
+        Duration ms: 2000.   "small delay so the server side has time to start"
+        let colonPos: Int.
+        colonPos := 0.
+        let i: Int.
+        i := 1.
+        [ (i <= seedAddr size) & (colonPos = 0) ] whileTrue: [
+            ((seedAddr at: i) = $:) ifTrue: [ colonPos := i ].
+            i := i + 1.
+        ].
+        let seedIP: String.
+        seedIP := seedAddr copyFrom: 1 to: colonPos - 1.
+        let seedPort: Int.
+        seedPort := (seedAddr copyFrom: colonPos + 1 to: seedAddr size) asInteger.
+
+        let session: Any.
+        session := NetworkChannel connectTo: seedIP port: seedPort.
+        session send: ('HELLO:', myName, String nl) asByteArray.
+        neighborsMutex critical: [ neighbors at: seedAddr put: session ].
+        handleNeighborSession: session neighborAddr: seedAddr.
+    ] name: 'outbound-', seedAddr.
+].
+
+"--- Accept inbound neighbor connections ---"
+Wifi listenOn: myPort do: [ :session |
+    Task spawn: [
+        let remoteAddr: String.
+        remoteAddr := session remoteAddress ifNil: [ 'unknown:0' ].
+        [
+            handleNeighborSession: session neighborAddr: remoteAddr.
+        ] on: Error do: [ :e |
+            Console println: 'neighbor error (', remoteAddr, '): ', e message.
+            removeNeighbor: remoteAddr.
+        ].
+    ] name: 'inbound-neighbor'.
+].
+
+"--- Gossip timer: share routing table with all neighbors every 15 seconds ---"
+Timer every: 15000 do: [
+    let gossipLine: String.
+    gossipLine := buildGossipLine.
+    neighborsMutex critical: [
+        neighbors do: [ :session |
+            [ session send: (gossipLine, String nl) asByteArray. ]
+                on: Error do: [ :e | Console println: 'gossip send error: ', e message. ].
+        ].
+    ].
+].
+
+"--- Route pruner: remove expired routes every 10 seconds ---"
+Timer every: 10000 do: [
+    routesMutex critical: [
+        let stale: OrderedCollection.
+        stale := OrderedCollection new.
+        routes do: [ :e | e isExpired ifTrue: [ stale add: e dest ] ].
+        stale do: [ :d | routes removeKey: d ifAbsent: [] ].
+        (stale size > 0) ifTrue: [ Console println: 'pruned ', stale size printString, ' routes' ].
+    ].
+].
+
+"--- REPL for live inspection and manual message sending ---"
+"  From the REPL you can do:"
+"    sendMessage: 'hello' to: 'node-c'"
+"    routes size printString"
+"    neighbors size printString"
+Wifi listenOn: 2323 do: [ :session |
+    Task spawn: [ PicoceciREPL serve: session ] name: 'tcp-repl'.
+].
+
+Console println: myName, ' mesh node running. Seeding from ', seeds size printString, ' neighbors.'.
+[ true ] whileTrue: [ Duration ms: 5000 ].

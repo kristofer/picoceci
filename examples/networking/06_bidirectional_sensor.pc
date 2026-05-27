@@ -1,0 +1,154 @@
+"Module 04 — Bidirectional sensor node"
+"Demonstrates: command dispatch Dictionary, full-duplex session, write mutex"
+"Flash this first. Then run 06_command_controller.pc on the controller board."
+
+let nodeName: String.
+nodeName := 'sensor-bidir-01'.
+
+"--- WiFi up ---"
+Wifi connectSSID: 'ship-net' password: 'hunter2'.
+[ Wifi status = #connected ] whileFalse: [ Duration ms: 200 ].
+Console println: nodeName, ' online: ', Wifi ipAddress.
+LED blinkEvery: 1000.
+
+"--- Sensor state ---"
+let temperature: Float.
+temperature := 22.0.
+let sampleRateMs: Int.
+sampleRateMs := 2000.
+let sampleTick: Int.
+sampleTick := 0.
+let calibrationOffset: Float.
+calibrationOffset := 0.0.
+
+Task spawn: [
+    [ true ] whileTrue: [
+        sampleTick := sampleTick + 1.
+        temperature := 22.0 + (sampleTick \\ 12) asFloat + calibrationOffset.
+        Duration ms: sampleRateMs.
+    ]
+] name: 'sensor-loop'.
+
+"--- Command session handler ---"
+handleSession: session [
+    let writeMutex: Semaphore.
+    writeMutex := Semaphore mutex.
+
+    sendReply: line [
+        writeMutex critical: [
+            session send: (line, String nl) asByteArray.
+        ].
+    ]
+
+    "Build command dispatch table"
+    let handlers: Dictionary.
+    handlers := Dictionary new.
+
+    handlers at: #get-reading put: [ :arg :seq |
+        sendReply: 'REPLY:', seq, ':', (temperature + calibrationOffset) printString.
+    ].
+
+    handlers at: #set-rate put: [ :arg :seq |
+        let newRate: Int.
+        newRate := arg asInteger.
+        (newRate > 0)
+            ifTrue: [
+                sampleRateMs := newRate.
+                sendReply: 'ACK:', seq, ':ok'.
+                Console println: 'sample rate -> ', sampleRateMs printString, ' ms'.
+            ]
+            ifFalse: [
+                sendReply: 'ACK:', seq, ':err:invalid rate'.
+            ].
+    ].
+
+    handlers at: #calibrate put: [ :arg :seq |
+        calibrationOffset := 0.5.   "simulate calibration result"
+        sendReply: 'ACK:', seq, ':ok'.
+        Console println: 'calibrated: offset=', calibrationOffset printString.
+    ].
+
+    handlers at: #safe-mode put: [ :arg :seq |
+        LED blinkEvery: 100.
+        sampleRateMs := 10000.
+        sendReply: 'ACK:', seq, ':ok'.
+        Console println: 'entered safe mode'.
+    ].
+
+    "Parse and dispatch incoming commands"
+    [ true ] whileTrue: [
+        let raw: String.
+        raw := session receive asString trimSeparators.
+        (raw size = 0) ifTrue: [ ^nil ].
+        Console println: 'cmd: ', raw.
+
+        (raw startsWith: 'CMD:') ifTrue: [
+            "CMD:seq:command[:arg]"
+            let body: String.
+            body := raw copyFrom: 5 to: raw size.
+
+            "Find first colon → seq"
+            let c1: Int.
+            c1 := 0.
+            let i: Int.
+            i := 1.
+            [ (i <= body size) & (c1 = 0) ] whileTrue: [
+                ((body at: i) = $:) ifTrue: [ c1 := i ].
+                i := i + 1.
+            ].
+
+            let cmdSeq: String.
+            cmdSeq := body copyFrom: 1 to: c1 - 1.
+            let rest: String.
+            rest := body copyFrom: c1 + 1 to: body size.
+
+            "Find second colon → command name vs arg"
+            let c2: Int.
+            c2 := 0.
+            i := 1.
+            [ (i <= rest size) & (c2 = 0) ] whileTrue: [
+                ((rest at: i) = $:) ifTrue: [ c2 := i ].
+                i := i + 1.
+            ].
+
+            let cmdName: String.
+            let cmdArg: String.
+            (c2 > 0)
+                ifTrue: [
+                    cmdName := rest copyFrom: 1 to: c2 - 1.
+                    cmdArg  := rest copyFrom: c2 + 1 to: rest size.
+                ]
+                ifFalse: [
+                    cmdName := rest.
+                    cmdArg  := ''.
+                ].
+
+            let handler: Any.
+            handler := handlers at: cmdName asSymbol ifAbsent: [ nil ].
+            handler notNil
+                ifTrue: [ handler value: cmdArg value: cmdSeq ]
+                ifFalse: [ sendReply: 'ACK:', cmdSeq, ':err:unrecognized command: ', cmdName ].
+        ].
+    ].
+]
+
+"--- TCP listener ---"
+Wifi listenOn: 7001 do: [ :session |
+    Task spawn: [
+        Console println: 'controller connected'.
+        [
+            handleSession: session.
+        ] on: Error do: [ :e |
+            Console println: 'session error: ', e message.
+        ].
+        session close.
+        Console println: 'controller disconnected'.
+    ] name: 'cmd-session'.
+].
+
+"--- REPL ---"
+Wifi listenOn: 2323 do: [ :session |
+    Task spawn: [ PicoceciREPL serve: session ] name: 'tcp-repl'.
+].
+
+[ true ] whileTrue: [ Duration ms: 5000 ].

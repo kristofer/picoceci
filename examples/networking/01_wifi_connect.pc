@@ -1,0 +1,34 @@
+"Module 01 — WiFi connection lifecycle"
+"Demonstrates: connect, poll for IP, timeout, LED status"
+"Run this on one ESP32-S3 to verify network access before moving to other examples."
+
+let nodeName: String.
+nodeName := 'node-01'.
+
+Console println: nodeName, ' booting...'.
+
+"Connect to WiFi"
+Wifi connectSSID: 'ship-net' password: 'hunter2'.
+
+"Poll with timeout (10 seconds = 20 attempts × 500 ms)"
+let attempts: Int.
+attempts := 0.
+
+[ (Wifi status = #connected) not & (attempts < 20) ] whileTrue: [
+    Console println: 'connecting... attempt ', attempts printString.
+    Duration ms: 500.
+    attempts := attempts + 1.
+].
+
+(Wifi status = #connected)
+    ifTrue: [
+        Console println: nodeName, ' connected: ', Wifi ipAddress.
+        LED blinkEvery: 1000.     "1 Hz = normal operation"
+    ]
+    ifFalse: [
+        Console println: nodeName, ' WiFi failed after ', attempts printString, ' attempts'.
+        LED blinkEvery: 200.      "5 Hz = fault"
+    ].
+
+"Keep the main task alive; background tasks (LED blink) continue"
+[ true ] whileTrue: [ Duration ms: 5000 ].

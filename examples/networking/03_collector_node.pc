@@ -1,0 +1,50 @@
+"Module 02 — Collector node (push receiver)"
+"Demonstrates: TCP server accepting push data from a sensor (02_sensor_server.pc)"
+"Flash this node FIRST. The sensor connects to this node's IP."
+
+let nodeName: String.
+nodeName := 'collector-01'.
+
+"--- WiFi up ---"
+Wifi connectSSID: 'ship-net' password: 'hunter2'.
+[ Wifi status = #connected ] whileFalse: [ Duration ms: 200 ].
+Console println: nodeName, ' online: ', Wifi ipAddress.
+Console println: 'Waiting for sensors on port 7001...'.
+LED blinkEvery: 1000.
+
+"--- Accumulated readings ---"
+let readingCount: Int.
+readingCount := 0.
+
+"--- One handler Task per incoming sensor ---"
+Wifi listenOn: 7001 do: [ :session |
+    Task spawn: [
+        Console println: 'sensor connected'.
+        LED on.
+        [
+            [ true ] whileTrue: [
+                let raw: String.
+                raw := session receive asString trimSeparators.
+                (raw size = 0) ifTrue: [
+                    "Empty receive means the connection closed"
+                    Console println: 'sensor disconnected'.
+                    LED off.
+                    ^nil
+                ].
+                readingCount := readingCount + 1.
+                Console println: '#', readingCount printString, ' ', raw.
+            ]
+        ] on: Error do: [ :e |
+            Console println: 'session error: ', e message.
+        ].
+        session close.
+        LED blinkEvery: 1000.
+    ] name: 'sensor-session'.
+].
+
+"--- REPL for inspection ---"
+Wifi listenOn: 2323 do: [ :session |
+    Task spawn: [ PicoceciREPL serve: session ] name: 'tcp-repl'.
+].
+
+[ true ] whileTrue: [ Duration ms: 5000 ].
