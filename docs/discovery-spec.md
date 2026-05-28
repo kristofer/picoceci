@@ -84,7 +84,6 @@ Proposed layering:
 - Announcement frame fields:
   - `nodeId` (stable UUID)
   - `name` (optional symbolic name)
-  - `capabilities` (array of symbols)
   - `tcpPort` (control/repl/service port)
   - `ttlMs`
   - `timestamp`

@@ -590,7 +590,9 @@ func makeListenerObject(ln picnet.Listener) *object.Object {
 // ---------------------------------------------------------------------------
 
 // makeSessionObject wraps a net.Session as a picoceci object.
-// The session exposes readLine, write:, remoteAddr, close, and asWriter.
+// The session exposes readLine, write:, writeln:, remoteAddr, close, printString,
+// and the <- / receive channel-style sugar so remote sessions look identical to
+// local Channel objects in picoceci code.
 func makeSessionObject(sess picnet.Session) *object.Object {
 	o := &object.Object{
 		Kind:    object.KindObject,
@@ -652,6 +654,33 @@ func makeSessionObject(sess picnet.Session) *object.Object {
 
 	o.Methods["printString"] = &object.MethodDef{Native: func(_ *object.Object, _ []*object.Object) (*object.Object, error) {
 		return object.StringObject("a TCPSession"), nil
+	}}
+
+	// <- sugar: session <- value   (identical to writeln:)
+	// Lets remote sessions look like local Channel objects to picoceci code.
+	o.Methods["<-"] = &object.MethodDef{Native: func(self *object.Object, args []*object.Object) (*object.Object, error) {
+		s, ok := self.Env.(picnet.Session)
+		if !ok || s == nil {
+			return object.Nil, nil
+		}
+		if len(args) > 0 && args[0] != nil {
+			_, _ = io.WriteString(s, displayString(args[0])+"\n")
+		}
+		return object.Nil, nil
+	}}
+
+	// receive sugar: <-session   (identical to readLine)
+	// The parser desugars <-session to the unary message "receive" sent to session.
+	o.Methods["receive"] = &object.MethodDef{Native: func(self *object.Object, _ []*object.Object) (*object.Object, error) {
+		s, ok := self.Env.(picnet.Session)
+		if !ok || s == nil {
+			return object.Nil, nil
+		}
+		line, err := s.ReadLine()
+		if err != nil {
+			return object.Nil, nil
+		}
+		return object.StringObject(line), nil
 	}}
 
 	return o

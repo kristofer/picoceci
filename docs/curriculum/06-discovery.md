@@ -43,9 +43,9 @@ Once implemented, `Discovery` is a singleton that manages peer tracking:
 "Start Discovery on boot — spawns its own background task"
 Task spawn: [ Discovery start ] name: 'discovery'.
 
-"Register this node's name and capabilities"
+"Register this node's name (can register multiple)"
 Discovery registerName: 'sensor-alpha'.
-Discovery registerName: 'telemetry-source'.   "can register multiple names"
+Discovery registerName: 'telemetry-source'.
 
 "Look up a peer by name — returns an endpoint record or nil"
 let endpoint: Any.
@@ -128,7 +128,7 @@ Discovery uses two transports:
 ```
 UDP multicast (announcements):
   group: 239.255.0.1 port 7800
-  frame: nodeId | name | capabilities | tcpPort | ttlMs | timestamp
+  frame: nodeId | name | tcpPort | ttlMs | timestamp
 
 TCP (NodeCache queries):
   NodeCache listens on a configurable port (e.g. 2324)
@@ -140,9 +140,8 @@ The announcement frame fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `nodeId` | UUID string | Stable across reboots (stored on SD card) |
+| `nodeId` | UUID string | Stable across reboots (derived from WiFi MAC) |
 | `name` | String | Symbolic service name (optional) |
-| `capabilities` | String array | What this node provides (e.g. `tempSensor`) |
 | `tcpPort` | Int | Port where this node's service listens |
 | `ttlMs` | Int | How long peers should keep this record |
 | `timestamp` | Int | Boot-relative ms when announced |
