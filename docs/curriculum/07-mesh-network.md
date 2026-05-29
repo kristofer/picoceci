@@ -223,7 +223,7 @@ handleNeighborSession: session name: neighborName [
     
     [ true ] whileTrue: [
         let line: String.
-        line := session receive asString trimSeparators.
+        line := <-session.
         (line size = 0) ifTrue: [
             routingTable removeKey: neighborName ifAbsent: [].
             ^self
@@ -237,7 +237,7 @@ handleNeighborSession: session name: neighborName [
         (line startsWith: 'PING:') ifTrue: [
             let seq: String.
             seq := line copyFrom: 6 to: line size.
-            session send: ('PONG:', seq, String nl) asByteArray.
+            session <- ('PONG:', seq).
         ].
         (line startsWith: 'BYE:') ifTrue: [ ^self ].
     ].
@@ -266,7 +266,7 @@ dispatchMessage: line [
     let fwdCh: Any.
     fwdCh := activeNeighbors at: route nexthop ifAbsent: [ nil ].
     fwdCh notNil ifTrue: [
-        fwdCh send: (line, String nl) asByteArray.
+        fwdCh <- line.
     ].
 ]
 ```

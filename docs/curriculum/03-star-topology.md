@@ -137,11 +137,11 @@ nodeId := Wifi ipAddress.    "e.g. '192.168.1.103'"
     [
         let ch: Any.
         ch := NetworkChannel connectTo: hubIP port: 7001.
-        ch send: ('HELLO:', nodeId, String nl) asByteArray.
+        ch <- ('HELLO:', nodeId).
         [ true ] whileTrue: [
             let reading: Float.
             reading := readSensor.
-            ch send: ('READING:', nodeId, ':', reading printString, String nl) asByteArray.
+            ch <- ('READING:', nodeId, ':', reading printString).
             Duration ms: 2000.
         ].
     ] on: Error do: [ :e |

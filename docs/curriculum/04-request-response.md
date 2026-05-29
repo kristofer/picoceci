@@ -48,7 +48,7 @@ writeMutex := Semaphore mutex.
 
 "safe send from any task:"
 writeMutex critical: [
-    session send: ('ACK:', seq printString, ':ok', String nl) asByteArray.
+    session <- ('ACK:', seq printString, ':ok').
 ].
 ```
 
@@ -97,22 +97,22 @@ let handlers: Dictionary.
 handlers := Dictionary new.
 
 handlers at: #get-reading put: [ :arg :seq |
-    session send: ('REPLY:', seq, ':', temperature printString, String nl) asByteArray.
+    session <- ('REPLY:', seq, ':', temperature printString).
 ].
 
 handlers at: #set-rate put: [ :arg :seq |
     sampleRateMs := arg asInteger.
-    session send: ('ACK:', seq, ':ok', String nl) asByteArray.
+    session <- ('ACK:', seq, ':ok').
 ].
 
 handlers at: #calibrate put: [ :arg :seq |
     runCalibration.
-    session send: ('ACK:', seq, ':ok', String nl) asByteArray.
+    session <- ('ACK:', seq, ':ok').
 ].
 
 handlers at: #safe-mode put: [ :arg :seq |
     LED blinkEvery: 100.
-    session send: ('ACK:', seq, ':ok', String nl) asByteArray.
+    session <- ('ACK:', seq, ':ok').
 ].
 ```
 
@@ -123,7 +123,7 @@ Dispatch a received command:
 "Parse: parts[0]=CMD parts[1]=3 parts[2]=set-rate parts[3]=500"
 let handler: Any.
 handler := handlers at: cmdName ifAbsent: [
-    session send: ('ACK:', seq, ':err:unrecognized command', String nl) asByteArray.
+    session <- ('ACK:', seq, ':err:unrecognized command').
     nil.
 ].
 handler notNil ifTrue: [ handler value: arg value: seq ].
@@ -158,7 +158,7 @@ object NodeConnection {
         line := (arg notNil)
             ifTrue: [ 'CMD:', thisSeq printString, ':', cmd, ':', arg ]
             ifFalse: [ 'CMD:', thisSeq printString, ':', cmd ].
-        channel send: (line, String nl) asByteArray.
+        channel <- line.
     ]
 
     handleReply: line [

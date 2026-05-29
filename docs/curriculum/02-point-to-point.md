@@ -3,7 +3,8 @@
 **Goal:** Two nodes exchange structured messages reliably over a persistent TCP
 connection.
 
-**New concepts:** `NetworkChannel`, message framing, push vs. pull, reconnection.
+**New concepts:** `NetworkChannel`, the `<-` channel syntax for network sessions,
+message framing, push vs. pull, reconnection.
 
 **Example files:** `03_collector_node.pc`, `04_ping_sender.pc`, `04_pong_receiver.pc`
 
@@ -17,19 +18,43 @@ Module 01 showed the server side (`Wifi listenOn:do:`). The client side uses
 ```picoceci
 let ch: Any.
 ch := NetworkChannel connectTo: '192.168.1.102' port: 7001.
-ch send: 'HELLO:sensor-1\n' asByteArray.
+ch <- 'HELLO:sensor-1'.
 let reply: String.
-reply := ch receive asString.
+reply := <-ch.
 ch close.
 ```
 
 `NetworkChannel connectTo:port:` blocks until the connection is established or
-fails. On success it returns a channel object with the same `send:`/`receive`/`close`
-interface as a server-side session.
+fails. On success it returns a channel object. **Both server-side sessions and
+client-side channels support the same `<-` send / `<-` receive syntax** — the
+topology difference lives in the Go binding, not in your picoceci code.
 
-> **Note:** `NetworkChannel` is part of the net module.  
-> Future modules will replace the IP address with a symbolic name via the
+> **Note:** Future modules replace the IP address with a symbolic name via the
 > `Discovery` singleton (see Module 06). For now, hard-code the collector's IP.
+
+### The <- syntax
+
+`ch <- value` sends `value` as a newline-terminated text line.  
+`<-ch` (prefix form) receives the next newline-terminated line and returns it as a `String`.
+
+These are the same operators used for in-process `Channel` objects. A local
+queue and a remote TCP connection look identical to a picoceci program:
+
+```picoceci
+"Local channel — works today"
+let q: Channel.
+q <- 'READING:23.5'.
+let msg: String.
+msg := <-q.
+
+"Remote session — also works, same syntax"
+let sess: Any.
+sess <- 'READING:23.5'.
+msg := <-sess.
+```
+
+The underlying methods are still available if you need them: `session writeln: str`
+and `session readLine` do exactly what `<-` and `receive` do, respectively.
 
 ---
 
@@ -79,44 +104,13 @@ TCP is a byte stream — it has no concept of message boundaries. If you send
 
 **Always terminate messages with a newline and parse until `\n`.**
 
-The `LineProtocol` helper (included in the module examples) handles this:
+The `<-` operator handles this automatically:
 
-```picoceci
-object LineProtocol {
-    let _session: Any.
+- `session <- 'READING:23.5'` appends `\n` before sending
+- `<-session` reads until the next `\n` and returns the line without the newline
 
-    on: aSession [
-        let p: LineProtocol.
-        p := LineProtocol new.
-        p _session := aSession.
-        ^p
-    ]
-
-    send: aString [
-        _session send: (aString , String nl) asByteArray.
-        ^self
-    ]
-
-    receive [
-        ^_session receive asString trimSeparators
-    ]
-
-    close [
-        _session close.
-        ^self
-    ]
-}
-```
-
-Use it anywhere you have a session or channel:
-
-```picoceci
-let proto: LineProtocol.
-proto := LineProtocol on: ch.
-proto send: 'READING:23.5'.
-let msg: String.
-msg := proto receive.
-```
+You never need to think about `String nl` or `asByteArray` when using `<-`. The
+protocol is: one line per message, newline-terminated.
 
 ---
 
@@ -147,24 +141,24 @@ A sensor must tolerate the collector being temporarily unavailable:
 
 ```picoceci
 [ true ] whileTrue: [
-    | connected |
-    connected := false.
     [
         let ch: Any.
         ch := NetworkChannel connectTo: '192.168.1.102' port: 7001.
-        connected := true.
-        let proto: LineProtocol.
-        proto := LineProtocol on: ch.
+        Console println: 'connected to collector'.
         [ true ] whileTrue: [
-            proto send: 'READING:', temperature printString.
+            ch <- ('READING:', temperature printString).
             Duration ms: 2000.
         ].
     ] on: Error do: [ :e |
-        Console println: 'lost connection: ', e message.
+        Console println: 'lost connection: ', e message, ' — retrying in 5s'.
+        Duration ms: 5000.
     ].
-    connected ifFalse: [ Duration ms: 5000 ].   "back-off before retry"
 ].
 ```
+
+Note the parens around `'READING:', temperature printString` — without them,
+the binary `,` operator would bind to the right argument of `<-` first, which
+is not what you want. When in doubt, add parens.
 
 ---
 
@@ -178,6 +172,24 @@ node A: PING:1 -->
                 <-- PONG:1
         PING:2 -->
                 <-- PONG:2
+```
+
+With `<-` syntax:
+
+```picoceci
+"Sender side"
+ch <- ('PING:', seq printString).
+let reply: String.
+reply := <-ch.
+
+"Receiver side"
+let msg: String.
+msg := <-session.
+(msg startsWith: 'PING:') ifTrue: [
+    let seq: String.
+    seq := msg copyFrom: 6 to: msg size.
+    session <- ('PONG:', seq).
+].
 ```
 
 This confirms:

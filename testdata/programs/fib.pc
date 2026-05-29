@@ -1,10 +1,8 @@
-"Fibonacci — recursive using a recursive block"
-let fib: Any. let result: Int.
+"Fibonacci using a block"
+let fib: Any.
 fib := [ :n |
     (n <= 1)
         ifTrue:  [ n ]
         ifFalse: [ (fib value: n - 1) + (fib value: n - 2) ]
 ].
-result := fib value: 10.
-Console println: result printString.
-"Expected: 55"
+Console println: (fib value: 10) printString.

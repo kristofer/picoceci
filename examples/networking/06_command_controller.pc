@@ -38,7 +38,7 @@ sendCommand: cmd arg: arg onCh: ch [
         ifFalse: [ line := 'CMD:', thisSeq printString, ':', cmd ].
 
     Console println: 'send -> ', line.
-    ch send: (line, String nl) asByteArray.
+    ch <- line.
     ^thisSeq
 ]
 
@@ -53,7 +53,7 @@ TaskSupervisor supervise: [
         [
             [ true ] whileTrue: [
                 let reply: String.
-                reply := ch receive asString trimSeparators.
+                reply := <-ch.
                 (reply size = 0) ifTrue: [ ^nil ].
                 Console println: 'recv <- ', reply.
             ]

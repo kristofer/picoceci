@@ -9,7 +9,7 @@ let c: Counter.
 c := Counter new.
 c inc.
 c inc.
-Transcript println: c value printString.
+Console println: c value printString.
 
 object LoggedCounter {
     compose Counter.

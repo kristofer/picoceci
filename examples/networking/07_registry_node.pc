@@ -61,7 +61,7 @@ Timer every: 10000 do: [
 handleRegistrySession: session clientIP: clientIP [
     [ true ] whileTrue: [
         let raw: String.
-        raw := session receive asString trimSeparators.
+        raw := <-session.
         (raw size = 0) ifTrue: [ ^nil ].
 
         "REGISTER:name:port"
@@ -88,10 +88,10 @@ handleRegistrySession: session clientIP: clientIP [
                 e port := portStr asInteger.
                 e lastSeen := Timestamp now ms.
                 registryMutex critical: [ entries at: regName put: e ].
-                session send: ('ACK:ok', String nl) asByteArray.
+                session <- 'ACK:ok'.
                 Console println: 'registered: ', e summary.
             ] ifFalse: [
-                session send: ('ACK:err:bad format', String nl) asByteArray.
+                session <- 'ACK:err:bad format'.
             ].
         ].
 
@@ -115,18 +115,18 @@ handleRegistrySession: session clientIP: clientIP [
                 found := entries at: qName ifAbsent: [ nil ].
             ].
             (found isNil | found isExpired)
-                ifTrue:  [ session send: ('NOTFOUND', String nl) asByteArray. ]
-                ifFalse: [ session send: ('ADDR:', found addrString, String nl) asByteArray. ].
+                ifTrue:  [ session <- 'NOTFOUND'. ]
+                ifFalse: [ session <- ('ADDR:', found addrString). ].
         ].
 
         "LIST — all current entries"
         (raw = 'LIST') ifTrue: [
             registryMutex critical: [
                 entries do: [ :e |
-                    session send: ('ENTRY:', e summary, String nl) asByteArray.
+                    session <- ('ENTRY:', e summary).
                 ].
             ].
-            session send: ('END', String nl) asByteArray.
+            session <- 'END'.
         ].
 
         "BYE:name"

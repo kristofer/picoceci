@@ -165,7 +165,7 @@ Wifi listenOn: 7000 do: [ :session |
         clientIp := session remoteAddress.   "IP of connecting node"
         [ keepGoing ] whileTrue: [
             let raw: String.
-            raw := session receive asString trimSeparators.
+            raw := <-session.
             (raw size = 0) ifTrue: [ keepGoing := false ] ifFalse: [
                 (raw startsWith: 'REGISTER:') ifTrue: [
                     "parse name and port from REGISTER:name:port"
@@ -204,9 +204,9 @@ myPort := 7001.
 "Register"
 let regCh: Any.
 regCh := NetworkChannel connectTo: registryIP port: 7000.
-regCh send: ('REGISTER:', myName, ':', myPort printString, String nl) asByteArray.
+regCh <- ('REGISTER:', myName, ':', myPort printString).
 let ack: String.
-ack := regCh receive asString trimSeparators.
+ack := <-regCh.
 Console println: 'registry: ', ack.
 regCh close.
 
@@ -217,7 +217,7 @@ Task spawn: [
         [
             let hbCh: Any.
             hbCh := NetworkChannel connectTo: registryIP port: 7000.
-            hbCh send: ('HEARTBEAT:', myName, String nl) asByteArray.
+            hbCh <- ('HEARTBEAT:', myName).
             hbCh close.
         ] on: Error do: [ :e |
             Console println: 'heartbeat failed: ', e message.
@@ -232,9 +232,9 @@ Task spawn: [
 resolveNode: name [
     let ch: Any.
     ch := NetworkChannel connectTo: registryIP port: 7000.
-    ch send: ('QUERY:', name, String nl) asByteArray.
+    ch <- ('QUERY:', name).
     let reply: String.
-    reply := ch receive asString trimSeparators.
+    reply := <-ch.
     ch close.
     (reply startsWith: 'ADDR:') ifTrue: [
         ^reply copyFrom: 6 to: reply size   "strip 'ADDR:' prefix"

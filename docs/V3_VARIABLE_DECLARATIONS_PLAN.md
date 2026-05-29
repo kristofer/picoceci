@@ -124,7 +124,7 @@ Status: **Implemented**
 Scope:
 - Rewrite picoceci source in:
   - `examples/**/*.pc`
-  - `testdata/**/*.pc` and `testdata/**/*.ceci`
+  - `testdata/**/*.pc`
   - embedded picoceci snippets in `pkg/**/_test.go`
   - markdown docs containing picoceci code blocks
 - Prefer `let x: Type.` by default.

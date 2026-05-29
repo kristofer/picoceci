@@ -67,7 +67,7 @@ The block argument is a **session object** representing the open TCP socket.
 
 ```picoceci
 Wifi listenOn: 7001 do: [ :session |
-    session send: 'hello\n' asByteArray.
+    session <- 'hello'.
     session close.
 ].
 ```
@@ -86,25 +86,28 @@ Now each client gets its own task and connections are handled concurrently.
 
 ### Session messages
 
-| Message | Description |
-|---------|-------------|
-| `session send: aByteArray` | Write bytes to the socket |
-| `session receive` | Block until bytes arrive; returns `ByteArray` |
+The `<-` channel syntax works for both local channels and network sessions:
+
+| Syntax | Description |
+|--------|-------------|
+| `session <- value` | Send `value` as a newline-terminated text line |
+| `<-session` | Receive the next line; returns `String` (newline stripped) |
 | `session close` | Close the connection |
 
-Working with strings:
-
 ```picoceci
-"Send a string line"
-session send: ('READING:23.5', String nl) asByteArray.
+"Send a string line (newline appended automatically)"
+session <- 'READING:23.5'.
 
-"Receive a line and parse it"
+"Send a composed string — parens needed for concatenation"
+session <- ('READING:', temperature printString).
+
+"Receive a line"
 let line: String.
-line := session receive asString.
+line := <-session.
 ```
 
-`String nl` is the newline character `'\n'`. This avoids embedding escape
-sequences in string literals.
+The lower-level methods `writeln:`, `write:`, and `readLine` are also available
+if you need fine-grained control over newline handling.
 
 ---
 
@@ -141,7 +144,7 @@ Task spawn: [
 Wifi listenOn: 7001 do: [ :session |
     Task spawn: [
         [ true ] whileTrue: [
-            session send: ('READING:', temperature printString, String nl) asByteArray.
+            session <- ('READING:', temperature printString).
             Duration ms: 1000.
         ]
     ] name: 'tcp-client'.

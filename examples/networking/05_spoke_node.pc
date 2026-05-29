@@ -40,13 +40,13 @@ Task spawn: [
         Console println: nodeName, ' connected to hub at ', hubIP.
 
         "Handshake: announce our identity"
-        ch send: ('HELLO:', nodeName, String nl) asByteArray.
+        ch <- ('HELLO:', nodeName).
 
         [
             [ true ] whileTrue: [
                 let reading: String.
                 reading := 'READING:', nodeName, ':', temperature printString.
-                ch send: (reading, String nl) asByteArray.
+                ch <- reading.
                 Console println: 'sent: ', reading.
                 LED toggle.
                 Duration ms: 2000.
@@ -56,7 +56,7 @@ Task spawn: [
         ].
 
         "Graceful disconnect"
-        ch send: ('BYE:', nodeName, String nl) asByteArray.
+        ch <- ('BYE:', nodeName).
         ch close.
 
     ] on: Error do: [ :e |

@@ -33,10 +33,10 @@ rtt := 0.
             seq := seq + 1.
             let sent: Int.
             sent := Timestamp now ms.
-            ch send: ('PING:', seq printString, String nl) asByteArray.
+            ch <- ('PING:', seq printString).
 
             let reply: String.
-            reply := ch receive asString trimSeparators.
+            reply := <-ch.
             rtt := Timestamp now ms - sent.
 
             (reply startsWith: 'PONG:') ifTrue: [

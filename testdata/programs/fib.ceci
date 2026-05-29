@@ -1,8 +1,0 @@
-"Fibonacci using a block"
-let fib: Any.
-fib := [ :n |
-    (n <= 1)
-        ifTrue:  [ n ]
-        ifFalse: [ (fib value: n - 1) + (fib value: n - 2) ]
-].
-Console println: (fib value: 10) printString.

@@ -27,7 +27,7 @@ func TestRepositorySourcesUseV3LetDeclarations(t *testing.T) {
 				return nil
 			}
 			ext := filepath.Ext(path)
-			if ext != ".pc" && ext != ".ceci" {
+			if ext != ".pc" {
 				return nil
 			}
 			assertNoLegacyDeclarations(t, path)

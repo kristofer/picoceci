@@ -109,7 +109,7 @@ Wifi listenOn: 7001 do: [ :session |
         [
             [ true ] whileTrue: [
                 let raw: String.
-                raw := session receive asString trimSeparators.
+                raw := <-session.
                 (raw size = 0) ifTrue: [
                     inbound send: 'BYE:', spokeId.
                     ^nil

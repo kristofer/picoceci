@@ -1816,8 +1816,7 @@ tinygo flash -target=esp32s3-generic \
 
 ## File Conventions
 
-- `.pc` — picoceci source files (current convention)
-- `.ceci` — alternate extension (also supported)
+- `.pc` — picoceci source files
 - One object or interface per file, named after the object (e.g., `Counter.pc`)
 - Modules are loaded with `import 'Counter'.`
 - The SD card path for libraries is `/sdcard/picoceci/libs/`

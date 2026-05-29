@@ -389,11 +389,11 @@ The session object returned by all three variants is identical — a `makeSessio
 
 Setting aside the immediate v0 implementation, here is what a modern, spacecraft-grade networking layer should look like in picoceci — the vision that the curriculum's Module 07 (mesh) is building toward.
 
-### 4.1 The Channel Abstraction Should Cross Node Boundaries
+### 4.1 The Channel Abstraction Crosses Node Boundaries
 
-The most powerful idea picoceci has not yet executed: **local and remote channels should look identical to the programmer.**
+**Local and remote channels look identical to a picoceci program.** The topology difference lives in the Go binding.
 
-Today, in-process channels use the `<-` syntax:
+In-process channels already use the `<-` syntax:
 
 ```picoceci
 readings <- 23.5.        "send to local channel"
@@ -401,23 +401,25 @@ let v: Float.
 v := <-readings.         "receive from local channel"
 ```
 
-A network channel uses a different object with different methods. That asymmetry forces students to think about topology when they should be thinking about data flow.
-
-The goal is:
+Network sessions now implement the same protocol. The `<-` method on a session object calls `writeln:` under the hood (appends `\n` and writes to the TCP stream); the `receive` unary message — which is what `<-session` desugars to — calls `readLine`:
 
 ```picoceci
-"Whether readings is a local Channel or a NetworkChannel, this code is the same:"
+"Whether readings is a local Channel or a remote session, this code is the same:"
 readings <- 23.5.
 let v: Float.
 v := <-readings.
 ```
 
-This requires `NetworkChannel` to implement the same `<-` send / `<-` receive protocol as the typed local `Channel`. It is achievable. The implementation difference — local vs. TCP write — lives in the Go binding, not in the picoceci program.
+This is not a future goal — it is the **current default**. `makeSessionObject()` in `builtins.go` registers both methods:
+
+- `"<-"` → `io.WriteString(s, displayString(arg)+"\n")` (identical to `writeln:`)
+- `"receive"` → `s.ReadLine()` (identical to `readLine`)
+
+The parser desugars `ch <- val` as binary message `"<-"` on `ch`, and `<-ch` as unary `"receive"` sent to `ch`. No special handling is needed for network sessions versus local channels.
 
 This mirrors Go's own philosophy: `io.Reader` and `io.Writer` are the same whether wrapping a file, a buffer, or a network socket.
 
 ### 4.2 The Health Broadcast
-
 
 
 Every running node should automatically include basic health metrics in its announcement:
@@ -570,7 +572,7 @@ Discovery v0 is closest to **mDNS**, which is intentional. mDNS is proven, runs 
 | Spec goals | Correct and achievable | No change needed |
 | Spec frame format | Unspecified | Add pipe-delimited text format |
 | Spec NodeCache sync | Over-specified for v0 | Defer to v1 |
-| Spec session API | Wrong (`send:`/`receive`) | Fix to `write:`/`readLine` |
+| Spec session API | Wrong (`send:`/`receive`) | Fixed: use `writeln:`/`readLine` or `<-`/`receive` |
 | TCP client connect | Missing from ABI | Add `picoceci_bridge_tcp_connect` (Phase A) |
 | UDP | Missing from ABI | Add 3 bridge functions (Phase B) |
 | Peer table design | Correct in spec; must be TinyGo | Implement in `pkg/discovery/` |
@@ -581,4 +583,4 @@ Discovery v0 is closest to **mDNS**, which is intentional. mDNS is proven, runs 
 | `NetworkChannel` picoceci object | Thin builtin wrapper | Implement in `builtins.go` |
 | Health in frame | Not in current spec | Add heap/uptime/taskCount fields (Phase C) |
 | NodeCache | Correct design, premature | Implement after Phase C |
-| `<-` syntax for network channels | Vision, not yet designed | Long-term goal, Phase D+ |
+| `<-` syntax for network channels | **Implemented** — sessions have `"<-"` and `"receive"` | Default style; `writeln:`/`readLine` still available |

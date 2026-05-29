@@ -41,9 +41,9 @@ lookupNode: name [
     [
         let ch: Any.
         ch := NetworkChannel connectTo: registryIP port: registryPort.
-        ch send: ('QUERY:', name, String nl) asByteArray.
+        ch <- ('QUERY:', name).
         let reply: String.
-        reply := ch receive asString trimSeparators.
+        reply := <-ch.
         ch close.
         (reply startsWith: 'ADDR:') ifTrue: [
             let addr: String.
@@ -63,9 +63,9 @@ registerSelf [
     [
         let ch: Any.
         ch := NetworkChannel connectTo: registryIP port: registryPort.
-        ch send: ('REGISTER:', nodeName, ':', myServicePort printString, String nl) asByteArray.
+        ch <- ('REGISTER:', nodeName, ':', myServicePort printString).
         let ack: String.
-        ack := ch receive asString trimSeparators.
+        ack := <-ch.
         ch close.
         Console println: 'registry: ', ack.
     ] on: Error do: [ :e |
@@ -82,7 +82,7 @@ Task spawn: [
         [
             let ch: Any.
             ch := NetworkChannel connectTo: registryIP port: registryPort.
-            ch send: ('HEARTBEAT:', nodeName, String nl) asByteArray.
+            ch <- ('HEARTBEAT:', nodeName).
             ch close.
         ] on: Error do: [ :e |
             Console println: 'heartbeat failed: ', e message.
@@ -129,8 +129,8 @@ Task spawn: [
 
                 let ch: Any.
                 ch := NetworkChannel connectTo: collIP port: collPort.
-                ch send: ('HELLO:', nodeName, String nl) asByteArray.
-                ch send: ('READING:', nodeName, ':', temperature printString, String nl) asByteArray.
+                ch <- ('HELLO:', nodeName).
+                ch <- ('READING:', nodeName, ':', temperature printString).
                 ch close.
                 Console println: 'sent reading to collector'.
             ] on: Error do: [ :e |
@@ -147,7 +147,7 @@ Task spawn: [
 "--- Local sensor service on myServicePort ---"
 Wifi listenOn: myServicePort do: [ :session |
     Task spawn: [
-        session send: ('READING:', temperature printString, String nl) asByteArray.
+        session <- ('READING:', temperature printString).
         session close.
     ] name: 'sensor-serve'.
 ].

@@ -51,11 +51,11 @@ Discovery registerName: 'telemetry-source'.
 let endpoint: Any.
 endpoint := Discovery lookup: 'collector'.
 
-"If found, connect to it"
+"If found, connect to it — same <- syntax as local channels"
 endpoint notNil ifTrue: [
     let ch: Any.
     ch := NetworkChannel connectToName: 'collector'.   "uses Discovery internally"
-    ch send: ('READING:23.5', String nl) asByteArray.
+    ch <- 'READING:23.5'.
 ].
 ```
 
@@ -169,9 +169,10 @@ Discovery registerName: 'sensor-alpha'.
 "5. Wait briefly for peer table to populate"
 Duration ms: 2000.
 
-"6. Look up needed peers and proceed"
+"6. Look up needed peers and proceed — <- syntax works identically for local and remote"
 let ch: Any.
 ch := NetworkChannel connectToName: 'collector'.
+ch <- ('READING:', temperature printString).
 ```
 
 The 2-second wait is a simple way to give multicast announcements time to arrive.

@@ -206,7 +206,7 @@ dispatchMessage: line [
         fwdSession := neighbors at: route nexthop ifAbsent: [ nil ].
     ].
     fwdSession notNil ifTrue: [
-        fwdSession send: (line, String nl) asByteArray.
+        fwdSession <- line.
         Console println: 'forwarded MSG to ', dest, ' via ', route nexthop.
     ] ifFalse: [
         Console println: 'nexthop session gone for ', dest, ' — dropping'.
@@ -230,7 +230,7 @@ sendMessage: payload to: dest [
         session := neighbors at: route nexthop ifAbsent: [ nil ].
     ].
     session notNil ifTrue: [
-        session send: (line, String nl) asByteArray.
+        session <- line.
     ] ifFalse: [
         Console println: 'no live session to ', route nexthop.
     ].
@@ -242,14 +242,14 @@ handleNeighborSession: session neighborAddr: addr [
     running := true.
     [ running ] whileTrue: [
         let raw: String.
-        raw := session receive asString trimSeparators.
+        raw := <-session.
         (raw size = 0) ifTrue: [ running := false ] ifFalse: [
             (raw startsWith: 'HELLO:') ifTrue: [
                 let neighborName: String.
                 neighborName := raw copyFrom: 7 to: raw size.
                 registerNeighbor: neighborName addr: addr session: session.
-                session send: ('HELLO:', myName, String nl) asByteArray.
-                session send: (buildGossipLine, String nl) asByteArray.
+                session <- ('HELLO:', myName).
+                session <- buildGossipLine.
             ].
             (raw startsWith: 'ROUTE:') ifTrue: [
                 mergeGossip: raw fromNeighbor: addr.
@@ -260,7 +260,7 @@ handleNeighborSession: session neighborAddr: addr [
             (raw startsWith: 'PING:') ifTrue: [
                 let seq: String.
                 seq := raw copyFrom: 6 to: raw size.
-                session send: ('PONG:', seq, String nl) asByteArray.
+                session <- ('PONG:', seq).
             ].
             (raw startsWith: 'BYE:') ifTrue: [ running := false ].
         ].
@@ -288,7 +288,7 @@ seeds do: [ :seedAddr |
 
         let session: Any.
         session := NetworkChannel connectTo: seedIP port: seedPort.
-        session send: ('HELLO:', myName, String nl) asByteArray.
+        session <- ('HELLO:', myName).
         neighborsMutex critical: [ neighbors at: seedAddr put: session ].
         handleNeighborSession: session neighborAddr: seedAddr.
     ] name: 'outbound-', seedAddr.
@@ -314,7 +314,7 @@ Timer every: 15000 do: [
     gossipLine := buildGossipLine.
     neighborsMutex critical: [
         neighbors do: [ :session |
-            [ session send: (gossipLine, String nl) asByteArray. ]
+            [ session <- gossipLine. ]
                 on: Error do: [ :e | Console println: 'gossip send error: ', e message. ].
         ].
     ].

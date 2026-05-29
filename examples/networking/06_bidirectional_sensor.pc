@@ -36,7 +36,7 @@ handleSession: session [
 
     sendReply: line [
         writeMutex critical: [
-            session send: (line, String nl) asByteArray.
+            session <- line.
         ].
     ]
 
@@ -78,7 +78,7 @@ handleSession: session [
     "Parse and dispatch incoming commands"
     [ true ] whileTrue: [
         let raw: String.
-        raw := session receive asString trimSeparators.
+        raw := <-session.
         (raw size = 0) ifTrue: [ ^nil ].
         Console println: 'cmd: ', raw.
 

@@ -1,0 +1,18 @@
+"Factorial — recursive using a recursive block"
+let fact: Any.
+fact := [ :n |
+    (n <= 1)
+        ifTrue:  [ 1 ]
+        ifFalse: [ n * (fact value: n - 1) ]
+].
+Console println: (fact value: 0) printString.
+Console println: (fact value: 1) printString.
+Console println: (fact value: 5) printString.
+Console println: (fact value: 10) printString.
+Console println: (fact value: 16) printString.
+"Expected:
+1
+1
+120
+3628800
+20922789888000"

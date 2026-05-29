@@ -22,12 +22,12 @@ Wifi listenOn: 7001 do: [ :session |
         [
             [ true ] whileTrue: [
                 let msg: String.
-                msg := session receive asString trimSeparators.
+                msg := <-session.
                 (msg size = 0) ifTrue: [ ^nil ].
                 (msg startsWith: 'PING:') ifTrue: [
                     let seq: String.
                     seq := msg copyFrom: 6 to: msg size.
-                    session send: ('PONG:', seq, String nl) asByteArray.
+                    session <- ('PONG:', seq).
                     pongCount := pongCount + 1.
                     Console println: 'PONG:', seq, '  (total: ', pongCount printString, ')'.
                     LED toggle.

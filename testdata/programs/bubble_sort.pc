@@ -1,4 +1,5 @@
 "Bubble Sort — sorts an array of integers in ascending order"
+"Prints the array after each swap (showing progress) then the final sorted result."
 let arr: Array. let n: Int. let swapped: Bool.
 arr := Array new: 6.
 arr at: 1 put: 64.
@@ -16,9 +17,9 @@ n := arr size.
               arr at: i put: (arr at: i + 1).
               arr at: i + 1 put: t.
               swapped := true.
-              Transcript println: arr printString.
+              Console println: arr printString.
           ]
   ].
   swapped ] whileTrue.
-Transcript println: arr printString.
-"Expected: (11 12 22 25 34 64 )"
+Console println: arr printString.
+"Final output: (11 12 22 25 34 64 )"

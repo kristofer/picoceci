@@ -42,7 +42,7 @@ Wifi listenOn: 7001 do: [ :session |
             [ true ] whileTrue: [
                 let line: String.
                 line := 'READING:', temperature printString.
-                session send: (line, String nl) asByteArray.
+                session <- line.
                 Duration ms: 2000.
             ]
         ] on: Error do: [ :e |
