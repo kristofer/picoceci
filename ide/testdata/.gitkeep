@@ -1,0 +1,8 @@
+# Sample picoceci project for IDE testing
+
+This directory will contain sample picoceci files for testing the IDE:
+- hello.pc - Simple hello world example
+- counter.pc - Counter with increment/decrement
+- objects.pc - Object composition examples
+
+See ../IDE_PLAN.md for detailed specifications.

@@ -1,0 +1,10 @@
+# Static frontend files will go here
+
+This directory will contain:
+- index.html - Main IDE interface
+- styles.css - Minimal styling
+- ide.js - Client-side helpers
+
+Uses HTMX for dynamic interactions without heavy JavaScript.
+
+See ../IDE_PLAN.md for detailed specifications.

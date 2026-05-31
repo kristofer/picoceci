@@ -1,0 +1,9 @@
+# Server implementation will go here
+
+This directory will contain the Go REST API server that provides:
+- File operations (CRUD)
+- Code execution endpoints
+- REPL session management
+- Project structure queries
+
+See ../IDE_PLAN.md for detailed specifications.
