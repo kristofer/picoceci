@@ -1,0 +1,41 @@
+"Counter example demonstrating objects and methods"
+
+object Counter {
+    let count: Int.
+
+    init [
+        count := 0.
+    ]
+
+    inc [
+        count := count + 1.
+        ^self
+    ]
+
+    dec [
+        count := count - 1.
+        ^self
+    ]
+
+    value [
+        ^count
+    ]
+
+    reset [
+        count := 0.
+        ^self
+    ]
+}
+
+"Create and use a counter"
+let c: Counter.
+c := Counter new.
+
+c inc; inc; inc.
+Console println: 'Counter value: ', c value printString.
+
+c dec.
+Console println: 'After decrement: ', c value printString.
+
+c reset.
+Console println: 'After reset: ', c value printString.

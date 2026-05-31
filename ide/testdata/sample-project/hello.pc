@@ -1,0 +1,3 @@
+"Hello World example for picoceci"
+
+Console println: 'Hello from the picoceci IDE!'.
