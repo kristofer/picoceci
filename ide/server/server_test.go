@@ -27,8 +27,12 @@ func TestFrontendShellServesIDEControls(t *testing.T) {
 		`hx-get="/api/project/tree"`,
 		`id="editor-content"`,
 		`id="save-button"`,
+		`id="copy-button"`,
 		`id="run-button"`,
 		`id="repl-form"`,
+		`id="outline-panel"`,
+		`id="session-badge"`,
+		`id="new-session-button"`,
 		`/static/ide.js`,
 	} {
 		if !strings.Contains(body, needle) {
@@ -52,6 +56,26 @@ func TestProjectTreeRendersSampleFiles(t *testing.T) {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("expected %q in project tree, got %q", needle, body)
 		}
+	}
+}
+
+func TestProjectOutlineReturnsSymbolList(t *testing.T) {
+	server := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/project/outline/hello.pc", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var symbols []string
+	if err := json.NewDecoder(rec.Body).Decode(&symbols); err != nil {
+		t.Fatalf("decode outline response: %v", err)
+	}
+	if len(symbols) != 0 {
+		t.Fatalf("expected no symbols for hello.pc, got %v", symbols)
 	}
 }
 
