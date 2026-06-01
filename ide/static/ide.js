@@ -212,7 +212,7 @@
   }
 
   function isMetaShortcut(event, key) {
-    return (event.metaKey || event.ctrlKey) && (event.key === key || event.key.toLowerCase() === key.toLowerCase());
+    return (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === key.toLowerCase();
   }
 
   document.addEventListener("DOMContentLoaded", function () {
