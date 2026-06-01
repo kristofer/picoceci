@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -27,8 +28,12 @@ func TestFrontendShellServesIDEControls(t *testing.T) {
 		`hx-get="/api/project/tree"`,
 		`id="editor-content"`,
 		`id="save-button"`,
+		`id="copy-button"`,
 		`id="run-button"`,
 		`id="repl-form"`,
+		`id="outline-panel"`,
+		`id="session-badge"`,
+		`id="new-session-button"`,
 		`/static/ide.js`,
 	} {
 		if !strings.Contains(body, needle) {
@@ -51,6 +56,35 @@ func TestProjectTreeRendersSampleFiles(t *testing.T) {
 	for _, needle := range []string{`data-path="counter.pc"`, `data-path="hello.pc"`} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("expected %q in project tree, got %q", needle, body)
+		}
+	}
+}
+
+func TestProjectOutlineReturnsSymbolList(t *testing.T) {
+	server := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/project/outline/counter.pc", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var symbols []string
+	if err := json.NewDecoder(rec.Body).Decode(&symbols); err != nil {
+		t.Fatalf("decode outline response: %v", err)
+	}
+	for _, expected := range []string{
+		"object Counter",
+		"method Counter>>init",
+		"method Counter>>inc",
+		"method Counter>>dec",
+		"method Counter>>value",
+		"method Counter>>reset",
+	} {
+		if !slices.Contains(symbols, expected) {
+			t.Fatalf("expected symbol %q in %v", expected, symbols)
 		}
 	}
 }

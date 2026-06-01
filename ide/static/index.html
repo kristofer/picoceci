@@ -13,10 +13,11 @@
       <header class="topbar">
         <div>
           <h1>picoceci IDE</h1>
-          <p>Phase 1/2 starter: files, execution, and REPL sessions.</p>
+          <p>Phase 3: sessions, outline, and Acme-inspired workflow.</p>
         </div>
         <div class="topbar__actions">
           <button id="save-button" type="button">Save</button>
+          <button id="copy-button" type="button">Copy</button>
           <button id="run-button" type="button">Run</button>
         </div>
       </header>
@@ -25,6 +26,10 @@
         <h2>Files</h2>
         <div id="file-tree" hx-get="/api/project/tree" hx-trigger="load" hx-target="this">
           Loading project tree…
+        </div>
+        <h2>Outline</h2>
+        <div id="outline-panel" class="outline-panel">
+          Open a file to load outline.
         </div>
       </section>
 
@@ -39,13 +44,16 @@
       <section class="panel panel--console">
         <div class="panel__header">
           <strong>Console / REPL</strong>
+          <span id="session-badge" class="session-badge">Session: none</span>
         </div>
         <div id="console-output" class="console-output" aria-live="polite"></div>
         <form id="repl-form" class="repl-form">
           <label class="sr-only" for="repl-input">REPL input</label>
           <input id="repl-input" name="code" type="text" autocomplete="off" placeholder="picoceci> enter code and press Enter">
           <button type="submit">Eval</button>
+          <button id="new-session-button" type="button">New session</button>
         </form>
+        <p class="hint">Shortcuts: Cmd/Ctrl+S save · Cmd/Ctrl+R run or eval · Cmd/Ctrl+L focus REPL</p>
       </section>
     </main>
   </body>

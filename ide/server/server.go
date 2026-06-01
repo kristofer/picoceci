@@ -19,7 +19,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kristofer/picoceci/pkg/ast"
 	"github.com/kristofer/picoceci/pkg/eval"
+	"github.com/kristofer/picoceci/pkg/lexer"
+	"github.com/kristofer/picoceci/pkg/parser"
 )
 
 const defaultSessionTTL = 30 * time.Minute
@@ -153,6 +156,8 @@ func (s *Server) Handler() http.Handler {
 			s.handleREPL(w, r)
 		case r.URL.Path == "/api/project/tree":
 			s.handleProjectTree(w, r)
+		case strings.HasPrefix(r.URL.Path, "/api/project/outline/"):
+			s.handleProjectOutline(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -343,6 +348,39 @@ func (s *Server) handleProjectTree(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, htmlTree)
 }
 
+func (s *Server) handleProjectOutline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	relPath := strings.TrimPrefix(r.URL.Path, "/api/project/outline/")
+	if relPath == "" {
+		writeError(w, http.StatusBadRequest, "outline path required")
+		return
+	}
+	fullPath, err := s.resolveProjectPath(relPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, os.ErrNotExist) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	symbols, err := extractSymbols(string(data))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, symbols)
+}
+
 func (s *Server) listProjectFiles() ([]fileEntry, error) {
 	files := make([]fileEntry, 0)
 	err := filepath.WalkDir(s.projectRoot, func(fullPath string, d fs.DirEntry, err error) error {
@@ -431,6 +469,34 @@ func (s *Server) renderTreeDirectory(buf *strings.Builder, dirPath, relPath stri
 	}
 	buf.WriteString(`</ul>`)
 	return nil
+}
+
+func extractSymbols(source string) ([]string, error) {
+	p := parser.New(lexer.NewString(source))
+	program, err := p.ParseProgram()
+	if err != nil {
+		return nil, err
+	}
+	if program == nil {
+		return []string{}, nil
+	}
+	symbols := make([]string, 0)
+	for _, stmt := range program.Statements {
+		switch node := stmt.(type) {
+		case *ast.ObjectDecl:
+			symbols = append(symbols, "object "+node.Name)
+			for _, method := range node.Methods {
+				symbols = append(symbols, "method "+node.Name+">>"+method.Selector)
+			}
+		case *ast.InterfaceDecl:
+			symbols = append(symbols, "interface "+node.Name)
+			for _, sig := range node.Sigs {
+				symbols = append(symbols, "sig "+node.Name+">>"+sig)
+			}
+		}
+	}
+	sort.Strings(symbols)
+	return symbols, nil
 }
 
 func (s *Server) executeSource(code string) executionResponse {
