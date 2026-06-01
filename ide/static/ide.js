@@ -212,7 +212,7 @@
   }
 
   function isMetaShortcut(event, key) {
-    return (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === key;
+    return (event.metaKey || event.ctrlKey) && (event.key === key || event.key.toLowerCase() === key.toLowerCase());
   }
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -268,7 +268,7 @@
         }
         runCurrentBuffer().catch((error) => appendConsole({ error: error.message }));
       }
-      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      if (isMetaShortcut(event, "Enter")) {
         event.preventDefault();
         runCurrentBuffer().catch((error) => appendConsole({ error: error.message }));
       }

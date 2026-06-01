@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -62,7 +63,7 @@ func TestProjectTreeRendersSampleFiles(t *testing.T) {
 func TestProjectOutlineReturnsSymbolList(t *testing.T) {
 	server := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/project/outline/hello.pc", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/project/outline/counter.pc", nil)
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
 
@@ -74,8 +75,17 @@ func TestProjectOutlineReturnsSymbolList(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&symbols); err != nil {
 		t.Fatalf("decode outline response: %v", err)
 	}
-	if len(symbols) != 0 {
-		t.Fatalf("expected no symbols for hello.pc, got %v", symbols)
+	for _, expected := range []string{
+		"object Counter",
+		"method Counter>>init",
+		"method Counter>>inc",
+		"method Counter>>dec",
+		"method Counter>>value",
+		"method Counter>>reset",
+	} {
+		if !slices.Contains(symbols, expected) {
+			t.Fatalf("expected symbol %q in %v", expected, symbols)
+		}
 	}
 }
 
