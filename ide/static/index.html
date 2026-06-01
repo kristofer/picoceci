@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>picoceci IDE</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script defer src="/static/ide.js"></script>
+  </head>
+  <body>
+    <main class="layout">
+      <header class="topbar">
+        <div>
+          <h1>picoceci IDE</h1>
+          <p>Phase 1/2 starter: files, execution, and REPL sessions.</p>
+        </div>
+        <div class="topbar__actions">
+          <button id="save-button" type="button">Save</button>
+          <button id="run-button" type="button">Run</button>
+        </div>
+      </header>
+
+      <section class="panel panel--sidebar">
+        <h2>Files</h2>
+        <div id="file-tree" hx-get="/api/project/tree" hx-trigger="load" hx-target="this">
+          Loading project tree…
+        </div>
+      </section>
+
+      <section class="panel panel--editor">
+        <div class="panel__header">
+          <strong id="current-file-label">No file selected</strong>
+          <span id="status-message" class="status-message" aria-live="polite"></span>
+        </div>
+        <textarea id="editor-content" spellcheck="false" placeholder="Select a file to begin editing"></textarea>
+      </section>
+
+      <section class="panel panel--console">
+        <div class="panel__header">
+          <strong>Console / REPL</strong>
+        </div>
+        <div id="console-output" class="console-output" aria-live="polite"></div>
+        <form id="repl-form" class="repl-form">
+          <label class="sr-only" for="repl-input">REPL input</label>
+          <input id="repl-input" name="code" type="text" autocomplete="off" placeholder="picoceci> enter code and press Enter">
+          <button type="submit">Eval</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

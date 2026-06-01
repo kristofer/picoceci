@@ -4,7 +4,7 @@ A simple, Acme-inspired web-based IDE for picoceci development.
 
 ## Status
 
-🚧 **Planning phase** - See [IDE_PLAN.md](IDE_PLAN.md) for the complete implementation plan.
+🚧 **Early implementation** - Phase 1/2 scaffolding now includes a Go REST server plus a minimal HTMX frontend for file browsing, editing, execution, and REPL sessions. See [IDE_PLAN.md](IDE_PLAN.md) for the broader roadmap.
 
 ## What is this?
 
@@ -23,15 +23,13 @@ The picoceci IDE provides:
 
 ## Quick Start
 
-*(To be implemented)*
-
 ```bash
 # Start the IDE server
 cd ide/server
-go run main.go --project=/path/to/your/project
+go run . --project=/path/to/your/project
 
 # Open in browser
-open http://localhost:8080
+open http://127.0.0.1:8080
 ```
 
 ## Design Philosophy
